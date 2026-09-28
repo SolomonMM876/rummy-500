@@ -218,7 +218,7 @@ goOut(g); // Sol +18, Alex −17
 eq(g.history[0].won, 0, 'higher hand score wins the hand');
 act(g, 0, { type: 'ready' });
 act(g, 1, { type: 'ready' });
-eq([g.attacks[0], g.attacks[1], g.wild], [{ smash: 1, spiders: 1, bloom: 1 }, {}, [1, 1]], 'the winner gets one of each attack; everyone has a wild one');
+eq([g.attacks[0], g.attacks[1], g.wild], [{ smash: 1, spiders: 1, bloom: 1, tornado: 1, catstorm: 1, gray: 1 }, {}, [1, 1]], 'the winner gets one of each attack; everyone has a wild one');
 ok(!act(g, 1, { type: 'attack', kind: 'spiders' }) && g.wild[1] === 0, 'the loser can still spend their wild attack');
 eq(act(g, 1, { type: 'attack', kind: 'spiders' }), 'You don’t have that attack. Win a hand to earn attacks for the next one.', 'but only once');
 ok(!act(g, 0, { type: 'attack', kind: 'spiders' }), 'use an attack, even on the other player’s turn or before drawing');
@@ -245,6 +245,27 @@ ok(g.log.some((e) => e.text.includes('went out')), 'the finished hand’s moves 
 act(g, 0, { type: 'ready' });
 act(g, 1, { type: 'ready' });
 ok(g.log.length <= 2 && g.log[0].text.startsWith('Hand 2:'), 'a new deal clears the previous hand’s moves');
+
+// Trading one card each.
+g = game();
+setup(g, { hands: [['5H', '6H', '9C', 'KD'], ['3C', '9S', '5D', '7H']], discard: ['2S'], stock: ['8D', 'QC'] });
+eq(act(g, 1, { type: 'trade-offer', card: '3C' }), 'It’s not your turn.', 'only offer on your own turn');
+ok(!act(g, 0, { type: 'trade-offer', card: 'KD' }), 'offer the K♦');
+eq([g.trade, R.viewFor(g, 1).trade], [{ from: 0, card: 'KD' }, { from: 0, card: 'KD' }], 'the other player sees the offer');
+ok(act(g, 0, { type: 'trade-offer', card: '9C' }), 'one offer at a time');
+ok(act(g, 0, { type: 'trade-accept', card: '5H' }), 'you can’t accept your own offer');
+ok(act(g, 1, { type: 'trade-accept', card: 'KS' }), 'you can only give a card you hold');
+ok(!act(g, 1, { type: 'trade-accept', card: '7H' }), 'accept, giving the 7♥');
+eq([g.hands[0], g.hands[1], g.trade], [['5H', '6H', '9C', '7H'], ['3C', '9S', '5D', 'KD'], null], 'the cards swapped hands');
+ok(!act(g, 0, { type: 'draw-stock' }) && !act(g, 0, { type: 'meld', cards: ['5H', '6H', '7H'] }), 'the traded card is yours to play');
+ok(!act(g, 0, { type: 'trade-offer', card: '9C' }) && !act(g, 1, { type: 'trade-decline' }) && g.trade === null, 'a declined offer goes away');
+ok(!act(g, 0, { type: 'trade-offer', card: '9C' }) && !act(g, 0, { type: 'trade-cancel' }) && g.trade === null, 'and so does a cancelled one');
+ok(!act(g, 0, { type: 'trade-offer', card: '9C' }) && !act(g, 0, { type: 'discard', card: '9C' }) && g.trade === null, 'an offer lapses when the card leaves your hand');
+g = game();
+setup(g, { hands: [['2H', '4S', 'KD'], ['3C', '9S']], discard: ['6S', '4C', '7H', '4D'], stock: ['9C'] });
+act(g, 0, { type: 'draw-discard', index: 1 });
+ok(act(g, 0, { type: 'trade-offer', card: '4C' }), 'can’t trade away a card you must play');
+ok(!act(g, 0, { type: 'trade-offer', card: 'KD' }) && !act(g, 1, { type: 'trade-accept', card: '9S' }) && !g.ti.canUndo && g.ti.undo.length === 0, 'a trade clears Undo');
 
 // Views keep each hand private.
 g = game();

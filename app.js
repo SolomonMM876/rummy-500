@@ -86,6 +86,9 @@
     smash: { emoji: '🪓', label: 'Break the table', blurb: 'crack their table in half', sent: (n) => `You smashed ${n}’s table in half!` },
     spiders: { emoji: '🕷️', label: 'Release spiders', blurb: 'set spiders loose on their screen', sent: (n) => `You set spiders loose on ${n}!` },
     bloom: { emoji: '🍄', label: 'Mushroom bloom', blurb: 'sprout mushrooms all over their table', sent: (n) => `Mushrooms are sprouting all over ${n}’s table!` },
+    tornado: { emoji: '🌪️', label: 'Tornado', blurb: 'whip their cards around and scramble their hand', sent: (n) => `A tornado is tearing through ${n}’s table!` },
+    catstorm: { emoji: '🐈', label: 'Cat storm', blurb: 'make it rain cats on their screen', sent: (n) => `It’s raining cats on ${n}!` },
+    gray: { emoji: '🌫️', label: 'Drain the colour', blurb: 'turn their hand grey for 30 seconds', sent: (n) => `${n}’s hand has gone grey for 30 seconds!` },
   };
 
   // ---------- helpers ----------
@@ -831,10 +834,17 @@
             h('div', { class: 'hand', id: 'hand' }),
             h('div', { class: 'controls', id: 'controls' }))),
         h('aside', { class: 'side', id: 'side' },
+          h('div', {
+            class: 'side-resize', role: 'separator', 'aria-orientation': 'vertical', 'aria-label': 'Resize the side panel',
+            title: 'Drag to resize the side panel · double-click to reset',
+            onpointerdown: (e) => startSideResize(e, false), ondblclick: resetSideWidth,
+          }),
           h('section', { id: 'video', class: 'panel' }),
           h('div', { id: 'side-panels', class: 'side-panels' }))));
+      applySideWidth(savedSideWidth());
     }
     const pilesBefore = pileRects(); // where the cards were, for the pick-up animation
+    const handBefore = Object.fromEntries([...document.querySelectorAll('#hand .card')].map((c) => [c.dataset.id, c.getBoundingClientRect()]));
     syncHand(prev);
     renderTopbar();
     renderOpp();
@@ -844,10 +854,11 @@
     renderHand();
     renderSide();
     syncSummary();
+    syncTrade(prev);
     const myTurn = (x) => x && x.phase === 'play' && x.turn === x.seat && x.handNo === v.handNo && x.gameNo === v.gameNo;
     if (prev && v.step === 'draw' && myTurn(v) && !myTurn(prev)) yourTurnCue();
     if (prev && prev.handNo !== v.handNo && v.phase === 'play') {
-      if (charges(v, v.seat)) toast('⚔️ You won the last hand, so you get three attacks to use this hand. They’re next to Taunt.', 'poke');
+      if (charges(v, v.seat)) toast('⚔️ You won the last hand, so you get one of each attack to use this hand. They’re next to Taunt.', 'poke');
       else if (charges(v, 1 - v.seat)) toast(`⚔️ ${v.names[1 - v.seat]} won the last hand and has attacks to use on you. Watch out!`);
     }
     if (!ui.wildHinted && v.phase === 'play' && v.wild && v.wild[v.seat] > 0) {
@@ -859,6 +870,8 @@
     const drew = prev && prev.phase === 'play' && v.phase === 'play' && prev.handNo === v.handNo && prev.gameNo === v.gameNo &&
       prev.turn === v.turn && prev.step === 'draw' && v.step === 'play';
     if (drew) pickupCue(pilesBefore);
+    const sameTurn = prev && prev.phase === 'play' && v.phase === 'play' && prev.handNo === v.handNo && prev.gameNo === v.gameNo && prev.turn === v.turn;
+    if (sameTurn) playCue(prev, handBefore);
   }
 
   // Keep your own card order between updates: new cards go on the right and glow.
@@ -1009,6 +1022,7 @@
     const body = v.melds.length
       ? h('div', { class: 'meld-grid' }, v.melds.map((m) => h('div', {
         class: 'meld' + (canLay ? ' can' : ''),
+        'data-meld': m.id,
         role: canLay ? 'button' : null,
         tabindex: canLay ? 0 : null,
         title: canLay ? `Lay off the selected cards on this ${E.meldName(m)}` : null,
@@ -1045,11 +1059,14 @@
       if (v.ti.topOnly && v.hand.includes(v.ti.topOnly)) extra = `You can’t discard the ${E.label(v.ti.topOnly)} this turn.`;
     }
     const over = v.phase === 'handOver' || v.phase === 'gameOver';
+    const t = v.phase === 'play' && v.trade;
     const el = $('#status');
     el.className = 'status ' + tone;
     el.replaceChildren(...[
       h('span', null, text),
       extra && h('span', { class: 'status-extra' }, extra),
+      t && t.from === me && h('span', { class: 'status-extra' }, `Waiting for ${v.names[o]} to answer your trade (${E.label(t.card)}).`),
+      t && t.from !== me && h('button', { class: 'btn small primary', onclick: openTrade }, `🤝 Answer ${v.names[o]}’s trade`),
       over && h('button', { class: 'btn small primary', onclick: () => openSummary(true) }, v.phase === 'gameOver' ? 'Final scores' : 'Hand results'),
     ].filter(Boolean));
   }
@@ -1093,6 +1110,9 @@
         h('span', { class: 'me-info' }, `You: ${plural(v.hand.length, 'card')} · ${onTable} on the table this hand · ${v.totals[v.seat]} total`)),
       h('div', { class: 'ctl-group' },
         n ? h('button', { class: 'btn ghost small', onclick: clearSelection }, `Clear (${n})`) : null,
+        v.phase === 'play' && v.turn === v.seat && !v.trade
+          ? h('button', { class: 'btn', disabled: n !== 1, onclick: offerTrade, title: 'Offer the selected card to swap for one of theirs' }, '🤝 Offer trade') : null,
+        v.trade && v.trade.from === v.seat ? h('button', { class: 'btn', onclick: () => send({ type: 'trade-cancel' }) }, 'Cancel trade') : null,
         playing && v.ti.canUndo ? h('button', { class: 'btn', onclick: () => send({ type: 'undo' }), title: 'Take back your last play this turn' }, 'Undo') : null,
         playing ? h('button', { class: 'btn', disabled: n < 3, onclick: doMeld, title: 'Put the selected cards down as a new set or run' }, n >= 3 ? `Meld ${n} cards` : 'Meld') : null,
         playing ? h('button', { class: 'btn primary', disabled: n !== 1, onclick: doDiscard, title: 'Discard the selected card and end your turn' }, 'Discard') : null));
@@ -1610,6 +1630,9 @@
     else if (la.kind === 'smash') smashTable(ui.view.names[la.by]);
     else if (la.kind === 'spiders') releaseSpiders(ui.view.names[la.by]);
     else if (la.kind === 'bloom') mushroomBloom(ui.view.names[la.by]);
+    else if (la.kind === 'tornado') tornado(ui.view.names[la.by]);
+    else if (la.kind === 'catstorm') catStorm(ui.view.names[la.by]);
+    else if (la.kind === 'gray') drainColour(ui.view.names[la.by]);
   }
 
   // What the attacker sees: the attack flies over to the other player.
@@ -1806,6 +1829,204 @@
         { transform: 'translate(-50%, -100%) scale(0.2)', opacity: 0 },
       ], { duration: 4300, delay: rng() * 1000, easing: 'ease-out', fill: 'backwards' }).onfinish = () => el.remove();
     }
+  }
+
+  // A twister crosses the table, whipping up the cards it passes and dropping them back in place.
+  function tornado(name) {
+    sfx('wind');
+    toast(`🌪️ ${name} sent a tornado through your table, and it scrambled your hand!`, 'poke');
+    const boardEl = $('.board');
+    if (calm() || !boardEl) return;
+    const b = boardEl.getBoundingClientRect();
+    const ltr = rng() < 0.5;
+    const x0 = ltr ? b.left - 160 : b.right + 160;
+    const x1 = ltr ? b.right + 160 : b.left - 160;
+    const baseY = b.bottom - 20;
+    const T = 4600;
+    const funnel = h('div', { class: 'tornado', 'aria-hidden': 'true' }, h('span', null, '🌪️'));
+    fx().append(funnel);
+    funnel.animate([
+      { transform: `translate(${x0}px, ${baseY}px)` },
+      { transform: `translate(${(x0 + x1) / 2}px, ${baseY - 24}px)`, offset: 0.5 },
+      { transform: `translate(${x1}px, ${baseY}px)` },
+    ], { duration: T, easing: 'linear' }).onfinish = () => funnel.remove();
+    const speed = (x1 - x0) / T;
+    const when = (r) => (r.left + r.width / 2 - x0) / (x1 - x0); // how far along the funnel is when it reaches r
+    document.querySelectorAll('.discard .card, .meld .card').forEach((card) => {
+      const r = card.getBoundingClientRect();
+      const t = when(r);
+      if (t > 0 && t < 1) setTimeout(() => whirl(card, r, speed), t * T);
+    });
+    const hand = $('#hand');
+    if (hand) setTimeout(scrambleHand, Math.min(0.9, Math.max(0.1, when(hand.getBoundingClientRect()))) * T);
+    const game = $('.game');
+    if (game) {
+      game.animate([...Array.from({ length: 14 }, (_, i) => ({ transform: i % 2 ? 'translate(3px, -2px)' : 'translate(-3px, 2px)' })), { transform: 'none' }],
+        { duration: T, easing: 'linear' });
+    }
+  }
+
+  // Lift one card into the wind, spin it round, and set it back down where it was.
+  function whirl(card, r, speed) {
+    if (!card.isConnected) return;
+    const ghost = card.cloneNode(true);
+    ghost.classList.remove('sel', 'fresh', 'placeholder', 'landing', 'whisked');
+    ghost.classList.add('whirled');
+    Object.assign(ghost.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px`, translate: 'none' });
+    ghost.style.setProperty('--cw', `${r.width}px`);
+    ghost.style.setProperty('--ch', `${r.height}px`);
+    fx().append(ghost);
+    card.classList.add('whisked');
+    const D = 1700;
+    const drift = speed * D * 0.35;
+    const spin = (rng() < 0.5 ? -360 : 360) * (1 + Math.floor(rng() * 2)); // whole turns, so it lands upright
+    const lift = 140 + rng() * 120;
+    const done = () => { ghost.remove(); card.classList.remove('whisked'); };
+    ghost.animate([
+      { transform: 'translate(0, 0) rotate(0deg)' },
+      { transform: `translate(${drift * 0.5 + 30}px, ${-lift * 0.6}px) rotate(${spin * 0.35}deg)`, offset: 0.25 },
+      { transform: `translate(${drift - 30}px, ${-lift}px) rotate(${spin * 0.65}deg)`, offset: 0.5 },
+      { transform: `translate(${drift * 0.6 + 20}px, ${-lift * 0.5}px) rotate(${spin * 0.85}deg)`, offset: 0.72 },
+      { transform: `translate(0, 0) rotate(${spin}deg)` },
+    ], { duration: D, easing: 'ease-in-out' }).onfinish = done;
+    setTimeout(done, D + 800); // in case the animation can't run
+  }
+
+  // Your hand fades to black and white for 30 seconds (the suit symbols still show).
+  let greyTimer = null;
+  function drainColour(name) {
+    sfx('drain');
+    toast(`🌫️ ${name} drained the colour from your hand for 30 seconds!`, 'poke');
+    const hand = $('#hand');
+    if (!hand) return;
+    hand.classList.add('greyed');
+    clearTimeout(greyTimer);
+    greyTimer = setTimeout(() => {
+      const el = $('#hand');
+      if (el) el.classList.remove('greyed');
+      toast('🎨 Your colours are back.');
+    }, 30000);
+  }
+
+  // The tornado scoops up your whole hand and drops it back in a random order.
+  function scrambleHand() {
+    const row = $('#hand');
+    if (!row || !ui.view || (ui.drag && ui.drag.active)) return;
+    const before = new Map([...row.children].map((c) => [c.dataset.id, c.getBoundingClientRect()]));
+    const inHand = new Set(ui.view.hand);
+    const cards = ui.order.filter((id) => inHand.has(id));
+    for (let i = cards.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [cards[i], cards[j]] = [cards[j], cards[i]];
+    }
+    ui.order = cards.concat(ui.order.filter((id) => !inHand.has(id)));
+    saveOrder();
+    renderHand();
+    const D = 1900;
+    [...row.children].forEach((el) => {
+      const from = before.get(el.dataset.id);
+      if (!from) return;
+      const to = el.getBoundingClientRect();
+      const ghost = el.cloneNode(true);
+      ghost.classList.remove('sel', 'fresh', 'whisked');
+      ghost.classList.add('whirled');
+      Object.assign(ghost.style, { left: `${from.left}px`, top: `${from.top}px`, width: `${from.width}px`, height: `${from.height}px`, translate: 'none' });
+      fx().append(ghost);
+      el.classList.add('whisked');
+      const dx = to.left - from.left;
+      const dy = to.top - from.top;
+      const lift = 160 + rng() * 140;
+      const spin = (rng() < 0.5 ? -360 : 360) * (1 + Math.floor(rng() * 2));
+      const swirl = (rng() - 0.5) * 240;
+      const done = () => { ghost.remove(); el.classList.remove('whisked'); };
+      ghost.animate([
+        { transform: 'translate(0, 0) rotate(0deg)' },
+        { transform: `translate(${swirl}px, ${-lift * 0.7}px) rotate(${spin * 0.35}deg)`, offset: 0.3 },
+        { transform: `translate(${dx * 0.5 - swirl}px, ${-lift}px) rotate(${spin * 0.7}deg)`, offset: 0.6 },
+        { transform: `translate(${dx}px, ${dy}px) rotate(${spin}deg)` },
+      ], { duration: D, delay: rng() * 250, easing: 'ease-in-out', fill: 'backwards' }).onfinish = done;
+      setTimeout(done, D + 1000); // in case the animation can't run
+    });
+  }
+
+  const CAT_EMOJI = ['🐱', '🐈', '😺', '😸', '😹', '😻', '🙀', '😼'];
+
+  // The sky darkens, lightning flashes, and it rains cats.
+  function catStorm(name) {
+    sfx('catstorm');
+    toast(`🐈 ${name} made it rain cats on you!`, 'poke');
+    if (calm()) return;
+    const W = innerWidth;
+    const H = innerHeight;
+    const clouds = h('div', { class: 'storm', 'aria-hidden': 'true' });
+    const flash = h('div', { class: 'flash', 'aria-hidden': 'true' });
+    fx().append(clouds, flash);
+    clouds.animate([{ opacity: 0 }, { opacity: 1, offset: 0.12 }, { opacity: 1, offset: 0.85 }, { opacity: 0 }], { duration: 5600 }).onfinish = () => clouds.remove();
+    flash.animate([{ opacity: 0 }, { opacity: 0.85, offset: 0.06 }, { opacity: 0.1, offset: 0.16 }, { opacity: 0.7, offset: 0.24 }, { opacity: 0 }],
+      { duration: 1000 }).onfinish = () => flash.remove();
+    const drawn = ['mushcat', 'blackcat', 'whitecat'];
+    for (let i = 0; i < 46; i++) {
+      const size = 30 + rng() * 50;
+      const el = h('div', { class: 'falling-cat', 'aria-hidden': 'true' });
+      if (i % 4 === 3) el.innerHTML = ART[drawn[Math.floor(rng() * drawn.length)]];
+      else el.textContent = CAT_EMOJI[Math.floor(rng() * CAT_EMOJI.length)];
+      Object.assign(el.style, { width: `${size}px`, height: `${size}px`, fontSize: `${size * 0.85}px` });
+      fx().append(el);
+      const x = rng() * W;
+      const drift = (rng() - 0.3) * 160; // the storm blows them a little to the right
+      el.animate([
+        { transform: `translate(${x}px, ${-size - 20}px) rotate(0deg)` },
+        { transform: `translate(${x + drift}px, ${H + size}px) rotate(${(rng() - 0.5) * 720}deg)` },
+      ], { duration: 1600 + rng() * 1800, delay: 300 + rng() * 3200, easing: 'cubic-bezier(.4,0,.8,.6)', fill: 'backwards' }).onfinish = () => el.remove();
+    }
+  }
+
+  // When someone melds or lays off, their hand or foot carries the cards onto the table.
+  function playCue(prev, handBefore) {
+    const v = ui.view;
+    const who = v.turn;
+    const style = v.grabs && v.grabs[who];
+    if (!isGrab(style) || style === 'none' || calm()) return;
+    const had = new Map(prev.melds.map((m) => [m.id, new Set(m.cards.map((c) => c.id))]));
+    const meld = v.melds.find((m) => m.cards.some((c) => !had.has(m.id) || !had.get(m.id).has(c.id)));
+    if (!meld) return;
+    const added = meld.cards.filter((c) => !had.has(meld.id) || !had.get(meld.id).has(c.id)).map((c) => c.id);
+    const meldEl = document.querySelector(`.meld[data-meld="${meld.id}"]`);
+    const placed = meldEl ? added.map((id) => meldEl.querySelector(`.card[data-id="${id}"]`)).filter(Boolean) : [];
+    if (!placed.length) return;
+    const mine = who === v.seat;
+    const src = mine && handBefore[added[0]] ? handBefore[added[0]] : ($('#opp .opp-hand') || $('#opp')).getBoundingClientRect();
+    const dst = placed[0].getBoundingClientRect();
+    const fx0 = src.left + Math.min(src.width, 60) / 2;
+    const fy0 = src.top + src.height / 2;
+    const tx = dst.left + dst.width / 2;
+    const ty = dst.top + dst.height / 2;
+    const sy = mine ? innerHeight + 90 : -90;
+    const hold = mine ? -44 : 44;
+    const T = GRAB_STYLES[style].ms;
+    placed.forEach((c) => c.classList.add('arriving'));
+    const limb = h('div', { class: 'fake-hand', 'aria-hidden': 'true' }, h('span', { class: mine ? 'up' : 'down' }, GRAB_STYLES[style].emoji));
+    const fan = h('div', { class: 'carried-fan', 'aria-hidden': 'true' }, added.map((id) => cardEl(id, { cls: 'tiny' })));
+    fx().append(fan, limb);
+    const at = (px, py, s = 1) => `translate(${px}px, ${py}px) scale(${s})`;
+    limb.animate([
+      { transform: at(fx0 + 120, sy), opacity: 0 },
+      { transform: at(fx0, fy0), opacity: 1, offset: 0.25 },
+      { transform: at(fx0, fy0, 0.85), opacity: 1, offset: 0.32 },
+      { transform: at(tx, ty, 0.85), opacity: 1, offset: 0.7 },
+      { transform: at(tx, ty + (mine ? 6 : -6), 0.85), opacity: 1, offset: 0.78 },
+      { transform: at(tx, sy), opacity: 0 },
+    ], { duration: T, easing: 'ease-in-out' }).onfinish = () => limb.remove();
+    fan.animate([
+      { transform: at(fx0, fy0 + hold), opacity: 0 },
+      { transform: at(fx0, fy0 + hold), opacity: 0, offset: 0.3 },
+      { transform: at(fx0, fy0 + hold), opacity: 1, offset: 0.33 },
+      { transform: at(tx, ty + hold * 0.3), opacity: 1, offset: 0.7 },
+      { transform: at(tx, ty), opacity: 0, offset: 0.76 },
+      { transform: at(tx, ty), opacity: 0 },
+    ], { duration: T, easing: 'ease-in-out' }).onfinish = () => fan.remove();
+    const reveal = () => placed.forEach((c) => c.classList.remove('arriving'));
+    setTimeout(reveal, T * 0.72);
   }
 
   // ---------- rearranging your hand ----------
@@ -2013,7 +2234,6 @@
     const name = oppName();
     if (!video.local && !video.remote) {
       box.className = 'panel video-off';
-      setVideoWidth(null);
       box.replaceChildren(h('div', { class: 'video-prompt' },
         h('span', null, video.peerOn ? `📷 ${name} has video on` : '📷 Video chat'),
         h('button', { class: 'btn small' + (video.peerOn ? ' primary' : ''), disabled: video.starting, onclick: startVideo },
@@ -2030,11 +2250,10 @@
           h('div', {
             class: 'video-resize', role: 'separator', 'aria-label': 'Resize video',
             title: 'Drag to resize the video · double-click to reset',
-            onpointerdown: startVideoResize,
-            ondblclick: () => { store.del('r500:videoWidth'); setVideoWidth(null); },
+            onpointerdown: (e) => startSideResize(e, true),
+            ondblclick: resetSideWidth,
           })),
         h('div', { class: 'video-controls' }));
-      setVideoWidth(store.get('r500:videoWidth'));
     }
     const remoteEl = box.querySelector('video.remote');
     const selfEl = box.querySelector('video.self');
@@ -2052,35 +2271,49 @@
     ].filter(Boolean));
   }
 
-  // The grip sits on the video's bottom-left corner: drag out to enlarge it over the table, in to shrink it.
-  function startVideoResize(e) {
+  // ---------- side panel width ----------
+  // Drag the video's corner grip, or the panel's left edge, to widen the side panel; the table makes room.
+
+  const savedSideWidth = () => store.get('r500:sideWidth') || store.get('r500:videoWidth'); // older pages saved the video width
+
+  function applySideWidth(w) {
+    const game = $('.game');
+    if (!game) return;
+    if (!w) { game.style.removeProperty('--side-w'); return; }
+    const most = Math.max(220, innerWidth - 520); // always leave the table at least 520 px
+    game.style.setProperty('--side-w', `${Math.round(Math.min(most, Math.max(220, w)))}px`);
+  }
+
+  function resetSideWidth() {
+    store.del('r500:sideWidth');
+    store.del('r500:videoWidth');
+    applySideWidth(null);
+  }
+
+  function startSideResize(e, fromVideo) {
     if (e.button !== 0) return;
     e.preventDefault();
-    const box = $('#video');
-    const startW = box.getBoundingClientRect().width;
+    const side = $('.side');
+    if (!side) return;
+    const startW = side.getBoundingClientRect().width;
     const x0 = e.clientX;
     const y0 = e.clientY;
+    document.body.classList.add('resizing');
     const move = (ev) => {
       const byX = startW + (x0 - ev.clientX);
-      const byY = startW + ((ev.clientY - y0) * 16) / 9; // the picture keeps its 16:9 shape
-      setVideoWidth(Math.abs(byX - startW) >= Math.abs(byY - startW) ? byX : byY);
+      const byY = startW + ((ev.clientY - y0) * 16) / 9; // dragging the video's corner down also widens it
+      applySideWidth(fromVideo && Math.abs(byY - startW) > Math.abs(byX - startW) ? byY : byX);
     };
     const up = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
       window.removeEventListener('pointercancel', up);
-      store.set('r500:videoWidth', Math.round(box.getBoundingClientRect().width));
+      document.body.classList.remove('resizing');
+      store.set('r500:sideWidth', Math.round(side.getBoundingClientRect().width));
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
     window.addEventListener('pointercancel', up);
-  }
-
-  function setVideoWidth(w) {
-    const box = $('#video');
-    if (!box) return;
-    if (!w) box.style.removeProperty('--vw');
-    else box.style.setProperty('--vw', `${Math.round(Math.min(innerWidth - 40, Math.max(200, w)))}px`);
   }
 
   // ---------- sounds ----------
@@ -2149,6 +2382,46 @@
     src.stop(at + 0.4);
   }
 
+  function meow(at) {
+    const osc = audio.createOscillator();
+    const filter = audio.createBiquadFilter();
+    const gain = audio.createGain();
+    const base = 480 + Math.random() * 220;
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(base * 0.8, at);
+    osc.frequency.exponentialRampToValueAtTime(base * 1.5, at + 0.12);
+    osc.frequency.exponentialRampToValueAtTime(base * 0.9, at + 0.5);
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(1200, at);
+    filter.frequency.linearRampToValueAtTime(2600, at + 0.12);
+    filter.frequency.linearRampToValueAtTime(900, at + 0.5);
+    gain.gain.setValueAtTime(0.0001, at);
+    gain.gain.exponentialRampToValueAtTime(0.12, at + 0.05);
+    gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.55);
+    osc.connect(filter).connect(gain).connect(audio.destination);
+    osc.start(at);
+    osc.stop(at + 0.6);
+  }
+
+  function wind(at) {
+    const src = audio.createBufferSource();
+    const filter = audio.createBiquadFilter();
+    const gain = audio.createGain();
+    src.buffer = noiseBuffer();
+    src.loop = true;
+    filter.type = 'bandpass';
+    filter.Q.value = 0.9;
+    filter.frequency.setValueAtTime(300, at);
+    for (let i = 1; i <= 9; i++) filter.frequency.linearRampToValueAtTime(300 + Math.random() * 700, at + i * 0.5);
+    gain.gain.setValueAtTime(0.0001, at);
+    gain.gain.exponentialRampToValueAtTime(0.35, at + 0.8);
+    gain.gain.setValueAtTime(0.35, at + 3.6);
+    gain.gain.exponentialRampToValueAtTime(0.0001, at + 4.6);
+    src.connect(filter).connect(gain).connect(audio.destination);
+    src.start(at);
+    src.stop(at + 4.7);
+  }
+
   function sfx(kind) {
     try {
       unlockAudio();
@@ -2156,6 +2429,7 @@
       const now = audio.currentTime;
       if (kind === 'poke') { tone(880, now, 0.35, 0.3); tone(1320, now + 0.16, 0.35, 0.3); }
       else if (kind === 'turn') { tone(784, now, 0.3, 0.12); tone(1047, now + 0.13, 0.45, 0.12); }
+      else if (kind === 'trade') { tone(523, now, 0.25, 0.12); tone(659, now + 0.1, 0.25, 0.12); tone(784, now + 0.2, 0.4, 0.12); }
       else if (kind === 'taunt') tone(520, now, 0.22, 0.16, 'triangle', 980);
       else if (kind === 'whoosh') whoosh(now);
       else if (kind === 'crack') {
@@ -2164,6 +2438,13 @@
         noiseBurst(now + 0.35, 0.9, 'lowpass', 380, 0.3);
       } else if (kind === 'skitter') {
         for (let i = 0; i < 16; i++) noiseBurst(now + i * 0.06 + Math.random() * 0.03, 0.022, 'bandpass', 3400, 0.22);
+      } else if (kind === 'drain') {
+        tone(660, now, 1.2, 0.14, 'triangle', 180);
+      } else if (kind === 'wind') {
+        wind(now);
+      } else if (kind === 'catstorm') {
+        noiseBurst(now, 1.4, 'lowpass', 220, 0.5); // thunder
+        for (let i = 0; i < 6; i++) meow(now + 0.5 + i * 0.55 + Math.random() * 0.3);
       } else if (kind === 'pop') {
         for (let i = 0; i < 9; i++) tone(520 + Math.random() * 380, now + i * 0.1 + Math.random() * 0.04, 0.09, 0.13, 'sine', 240);
       }
@@ -2183,6 +2464,74 @@
   }
 
   // ---------- modals & toasts ----------
+
+  // ---------- trades ----------
+
+  function offerTrade() {
+    const v = ui.view;
+    if (ui.selected.size !== 1) { toast('Select one card to offer.', 'error'); return; }
+    const card = [...ui.selected][0];
+    if (card === v.ti.mustPlay || card === v.ti.topOnly) {
+      toast(`You can’t trade the ${E.label(card)}: you just took it from the discard pile.`, 'error');
+      return;
+    }
+    ui.selected.clear();
+    send({ type: 'trade-offer', card });
+  }
+
+  // Pop the offer up for the other player once, close it when it's settled, and say how it went.
+  function syncTrade(prev) {
+    const v = ui.view;
+    const t = v.trade;
+    const key = t ? `${v.gameNo}:${v.handNo}:${t.from}:${t.card}` : null;
+    if (t && t.from !== v.seat && key !== ui.tradeKey) {
+      ui.tradeKey = key;
+      ui.tradePick = null;
+      sfx('trade');
+      openTrade();
+    } else if (t && ui.modal && ui.modal.kind === 'trade') {
+      openTrade(); // refresh the choice of cards
+    }
+    if (!t && ui.modal && ui.modal.kind === 'trade') closeModal();
+    if (prev && prev.trade && !t) {
+      const last = v.log.length ? v.log[v.log.length - 1].text : '';
+      if (/trade/.test(last)) toast(last);
+      if (/traded/.test(last)) sfx('trade');
+    }
+  }
+
+  function openTrade() {
+    const v = ui.view;
+    const t = v.trade;
+    if (!t || t.from === v.seat) return;
+    const inHand = new Set(v.hand);
+    if (!inHand.has(ui.tradePick)) ui.tradePick = null;
+    const pick = (id) => { ui.tradePick = id; openTrade(); };
+    openModal({
+      title: '🤝 Trade offer',
+      kind: 'trade',
+      body: [
+        h('p', null, `${v.names[t.from]} offers you this card:`),
+        h('div', { class: 'trade-offer' }, cardEl(t.card)),
+        h('p', null, 'Pick one of your cards to give in return:'),
+        h('div', { class: 'trade-pick' }, ui.order.filter((id) => inHand.has(id)).map((id) => {
+          const el = cardEl(id, { cls: 'tiny' + (ui.tradePick === id ? ' picked' : '') });
+          el.tabIndex = 0;
+          el.setAttribute('role', 'button');
+          el.setAttribute('aria-pressed', String(ui.tradePick === id));
+          el.setAttribute('aria-label', E.label(id));
+          el.addEventListener('click', () => pick(id));
+          el.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(id); } });
+          return el;
+        })),
+      ],
+      actions: [
+        h('button', { class: 'btn ghost', onclick: () => send({ type: 'trade-decline' }) }, 'No thanks'),
+        h('button', { class: 'btn primary', disabled: !ui.tradePick, onclick: () => send({ type: 'trade-accept', card: ui.tradePick }) },
+          ui.tradePick ? `Trade my ${E.label(ui.tradePick)}` : 'Trade'),
+      ],
+    });
+  }
 
   function syncSummary() {
     const v = ui.view;
@@ -2217,8 +2566,8 @@
       h('p', { class: 'lede' }, gameOver ? `Final score ${Math.max(...v.totals)} to ${Math.min(...v.totals)}. ${out}` : out,
         tied ? ' You’re tied, so there’s one more hand.' : ''),
       !gameOver && x.won != null ? h('p', { class: 'armed-note' }, x.won === me
-        ? '⚔️ You won the hand, so you get three attacks to use in the next one.'
-        : `⚔️ ${v.names[x.won]} won the hand and gets three attacks to use in the next one. Watch out!`) : null,
+        ? '⚔️ You won the hand, so you get one of each attack to use in the next one.'
+        : `⚔️ ${v.names[x.won]} won the hand and gets one of each attack to use in the next one. Watch out!`) : null,
       h('table', { class: 'summary' },
         h('thead', null, h('tr', null, h('th', null, ''), h('th', null, 'On table'), h('th', null, 'Left in hand'), h('th', null, 'This hand'), h('th', null, 'Total'))),
         h('tbody', null, row(me, 'You'), row(o, nm(v.names[o])))),
@@ -2301,6 +2650,7 @@
     }
     window.addEventListener('hashchange', route);
     window.addEventListener('focus', stopTitleFlash);
+    window.addEventListener('resize', () => { if (ui.screen === 'game') applySideWidth(savedSideWidth()); });
     document.addEventListener('pointerdown', unlockAudio, { once: true });
     document.addEventListener('keydown', (e) => {
       if (e.key !== 'Escape') return;

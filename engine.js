@@ -25,11 +25,14 @@
   const RANK_PLURAL = [null, 'Aces', '2s', '3s', '4s', '5s', '6s', '7s', '8s', '9s', '10s', 'Jacks', 'Queens', 'Kings'];
   const SCORING = ['simplified', 'traditional', 'advanced'];
   // Cosmetic attacks: whoever scores more in a hand gets one of each for the next hand.
-  const ATTACKS = ['smash', 'spiders', 'bloom'];
+  const ATTACKS = ['smash', 'spiders', 'bloom', 'tornado', 'catstorm', 'gray'];
   const ATTACK_NOTE = {
     smash: (name) => `${name} smashed the table in half! 💥`,
     spiders: (name) => `${name} released the spiders! 🕷️`,
     bloom: (name) => `${name} made mushrooms sprout everywhere! 🍄`,
+    tornado: (name) => `${name} sent a tornado through the table! 🌪️`,
+    catstorm: (name) => `${name} made it rain cats! 🐈`,
+    gray: (name) => `${name} drained the colour from the other hand! 🌫️`,
   };
 
   const isJoker = (id) => id.charAt(0) === 'X';
@@ -292,6 +295,7 @@
       attacks: [{}, {}], // attacks each player can still use this hand, by kind
       wild: [1, 1], // one attack each to start the game, usable as any kind
       lastAttack: null, // { n, by, kind }: n counts up so each attack plays once
+      trade: null, // an open offer: { from: seat, card }
       log: [],
       logSeq: 0,
       seq: 0,
@@ -330,6 +334,8 @@
   }
 
   function beginTurn(g, p) {
+    if (g.trade) note(g, 'The trade offer expired.');
+    g.trade = null;
     g.turn = p;
     g.step = 'draw';
     g.ti = blankTurn();
@@ -352,6 +358,7 @@
     g.phase = 'handOver';
     g.ready = [false, false];
     g.ti = blankTurn();
+    g.trade = null;
     const [a, b] = g.totals;
     if (Math.max(a, b) >= st.target) {
       if (a !== b) {
@@ -529,6 +536,42 @@
       note(g, ATTACK_NOTE[act.kind](g.names[seat]));
     },
 
+    // Trades: on your turn you can offer one card; the other player swaps one of theirs for it, or declines.
+    'trade-offer'(g, seat, act) {
+      const e = turnCheck(g, seat);
+      if (e) return e;
+      if (g.trade) return 'You already have a trade on offer.';
+      const card = act.card;
+      if (typeof card !== 'string' || !g.hands[seat].includes(card)) return 'That card isn’t in your hand.';
+      if (card === g.ti.mustPlay || card === g.ti.topOnly) return `You can’t trade the ${label(card)}: you just took it from the discard pile.`;
+      g.trade = { from: seat, card };
+      note(g, `${g.names[seat]} offered to trade the ${label(card)}. 🤝`);
+    },
+
+    'trade-cancel'(g, seat) {
+      if (!g.trade || g.trade.from !== seat) return 'You don’t have a trade on offer.';
+      g.trade = null;
+      note(g, `${g.names[seat]} withdrew the trade offer.`);
+    },
+
+    'trade-accept'(g, seat, act) {
+      const t = g.trade;
+      if (g.phase !== 'play' || !t || t.from === seat) return 'There’s no trade offer for you.';
+      const give = act.card;
+      if (typeof give !== 'string' || !g.hands[seat].includes(give)) return 'Pick one of your cards to give in return.';
+      g.hands[t.from] = g.hands[t.from].filter((id) => id !== t.card).concat(give);
+      g.hands[seat] = g.hands[seat].filter((id) => id !== give).concat(t.card);
+      g.ti.undo = []; // the hands changed under any saved snapshots
+      g.trade = null;
+      note(g, `${g.names[t.from]} traded the ${label(t.card)} for ${g.names[seat]}’s ${label(give)}. 🤝`);
+    },
+
+    'trade-decline'(g, seat) {
+      if (!g.trade || g.trade.from === seat) return 'There’s no trade offer for you.';
+      g.trade = null;
+      note(g, `${g.names[seat]} turned down the trade.`);
+    },
+
     // Both players confirm before the next hand (or a new game) is dealt.
     ready(g, seat, act, rng) {
       if (g.phase === 'play') return 'The hand is still being played.';
@@ -547,6 +590,8 @@
     if (!fn) return 'Unknown move.';
     const err = fn(g, seat, act, rng);
     if (err) return err;
+    // An offer lapses once the offered card has left its owner's hand (melded, laid off or discarded).
+    if (g.trade && !g.hands[g.trade.from].includes(g.trade.card)) g.trade = null;
     g.seq += 1;
     return null;
   }
@@ -582,6 +627,7 @@
       attacks: g.attacks || [{}, {}],
       wild: g.wild || [1, 1],
       lastAttack: g.lastAttack || null,
+      trade: g.trade || null,
       log: g.log.slice(-80),
       seq: g.seq,
     };

@@ -205,7 +205,7 @@ input.num { width: 110px; }
 }
 
 /* ---------- game layout ---------- */
-.game { display: grid; grid-template-columns: minmax(0, 1fr) 310px; grid-template-rows: auto auto minmax(0, 1fr); height: 100vh; }
+.game { display: grid; grid-template-columns: minmax(0, 1fr) var(--side-w, 310px); grid-template-rows: auto auto minmax(0, 1fr); height: 100vh; }
 .topbar {
   grid-row: 1; grid-column: 1 / -1; display: flex; align-items: center; gap: 18px; padding: 9px 18px;
   background: rgba(0, 0, 0, 0.24); border-bottom: 1px solid var(--line);
@@ -216,7 +216,7 @@ input.num { width: 110px; }
 .banner { grid-row: 2; grid-column: 1 / -1; padding: 9px 18px; background: #5a3b0c; border-bottom: 1px solid rgba(243, 194, 79, 0.5); color: #ffe7ad; font-weight: 600; text-align: center; }
 .panel-card .banner { border-radius: 10px; margin-top: 16px; border: 1px solid rgba(243, 194, 79, 0.5); }
 .board { grid-row: 3; grid-column: 1; display: flex; flex-direction: column; gap: 12px; padding: 12px 18px 12px; min-width: 0; min-height: 0; }
-.side { grid-row: 3; grid-column: 2; display: flex; flex-direction: column; gap: 12px; padding: 12px; border-left: 1px solid var(--line); background: rgba(0, 0, 0, 0.14); min-height: 0; }
+.side { position: relative; grid-row: 3; grid-column: 2; display: flex; flex-direction: column; gap: 12px; padding: 12px; border-left: 1px solid var(--line); background: rgba(0, 0, 0, 0.14); min-height: 0; }
 
 .opp-strip { display: flex; align-items: center; gap: 18px; min-height: 58px; }
 .who { display: flex; align-items: center; gap: 10px; flex: none; padding: 6px 12px 6px 6px; border-radius: 999px; border: 1px solid transparent; }
@@ -432,6 +432,29 @@ body.nudge .game { animation: nudge 0.5s ease; }
 .card.carried { position: fixed; left: 0; top: 0; margin: 0; --cw: 50px; --ch: 71px; pointer-events: none; box-shadow: 0 10px 22px rgba(0, 0, 0, 0.4); }
 .menu-note { grid-column: 1 / -1; padding: 4px 6px 2px; font-size: 13px; color: var(--gold); }
 
+/* ---------- tornado, cat storm, and cards carried onto the table ---------- */
+.tornado { position: fixed; left: 0; top: 0; }
+.tornado span { position: absolute; translate: -50% -100%; font-size: 240px; line-height: 1; transform-origin: 50% 100%; animation: twister 0.3s ease-in-out infinite alternate; filter: drop-shadow(0 14px 22px rgba(0, 0, 0, 0.45)); }
+@keyframes twister { from { transform: skewX(-7deg) scaleX(0.92); } to { transform: skewX(7deg) scaleX(1.06); } }
+.card.whirled { position: fixed; margin: 0; pointer-events: none; box-shadow: 0 10px 20px rgba(0, 0, 0, 0.4); }
+.card.whisked, .meld .card.arriving { visibility: hidden; }
+#hand .card { filter: grayscale(0); transition: transform 0.15s ease, box-shadow 0.15s ease, translate 0.16s ease, filter 1.4s ease; }
+#hand.greyed .card { filter: grayscale(1) contrast(1.05); }
+.falling-cat { position: fixed; left: 0; top: 0; display: grid; place-items: center; line-height: 1; translate: -50% 0; filter: drop-shadow(0 4px 4px rgba(0, 0, 0, 0.35)); }
+.falling-cat svg { display: block; width: 100%; height: 100%; }
+.storm { position: fixed; left: 0; right: 0; top: 0; height: 45vh; background: linear-gradient(to bottom, rgba(18, 22, 36, 0.82), rgba(18, 22, 36, 0)); }
+.flash { position: fixed; inset: 0; background: #f4f7ff; }
+.carried-fan { position: fixed; left: 0; top: 0; display: flex; translate: -50% -50%; pointer-events: none; filter: drop-shadow(0 10px 14px rgba(0, 0, 0, 0.4)); }
+.carried-fan .card + .card { margin-left: -24px; }
+
+/* ---------- trades ---------- */
+.trade-offer { display: flex; margin: 8px 0 4px; }
+.trade-offer .card { --cw: 66px; --ch: 94px; }
+.trade-pick { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 4px; }
+.trade-pick .card { cursor: pointer; transition: transform 0.12s ease, box-shadow 0.12s ease; }
+.trade-pick .card:hover { transform: translateY(-4px); }
+.trade-pick .card.picked { transform: translateY(-8px); box-shadow: 0 0 0 3px var(--gold), 0 8px 14px rgba(0, 0, 0, 0.35); }
+
 /* ---------- video chat ---------- */
 .side-panels { display: flex; flex-direction: column; gap: 12px; flex: 1; min-height: 0; }
 .video-prompt { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-weight: 600; overflow-wrap: anywhere; }
@@ -441,7 +464,11 @@ body.nudge .game { animation: nudge 0.5s ease; }
 .video-note { position: absolute; inset: 0; display: grid; place-items: center; padding: 14px; text-align: center; font-size: 13px; color: var(--ink-2); overflow-wrap: anywhere; }
 .video-controls { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 /* Resizable: a width wider than the side panel spills left over the table. */
-#video.video-on { position: relative; z-index: 6; width: var(--vw, 100%); margin-left: calc(100% - var(--vw, 100%)); box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35); }
+#video.video-on { position: relative; }
+.side-resize { position: absolute; left: -5px; top: 0; bottom: 0; z-index: 5; width: 10px; cursor: ew-resize; touch-action: none; }
+.side-resize::after { content: ""; position: absolute; left: 4px; top: 0; bottom: 0; width: 2px; transition: background 0.15s; }
+.side-resize:hover::after, body.resizing .side-resize::after { background: var(--gold); }
+body.resizing { user-select: none; -webkit-user-select: none; }
 .video-resize {
   position: absolute; left: 0; bottom: 0; z-index: 2; width: 28px; height: 28px; cursor: nesw-resize; touch-action: none; opacity: 0.75;
   background: linear-gradient(45deg, rgba(255, 255, 255, 0.9) 0 7%, transparent 7% 17%, rgba(255, 255, 255, 0.9) 17% 24%, transparent 24% 34%, rgba(255, 255, 255, 0.9) 34% 41%, transparent 41%);
@@ -451,14 +478,15 @@ body.nudge .game { animation: nudge 0.5s ease; }
 
 /* ---------- smaller screens ---------- */
 @media (max-width: 1000px) {
-  .game { grid-template-columns: minmax(0, 1fr) 250px; }
+  .game { grid-template-columns: minmax(0, 1fr) var(--side-w, 250px); }
   .tb-info { display: none; }
 }
 @media (max-width: 760px) {
   .game { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto auto; height: auto; min-height: 100vh; }
   .side { grid-row: 4; grid-column: 1; border-left: 0; border-top: 1px solid var(--line); }
   .log ol { max-height: 240px; }
-  #video.video-on { width: min(var(--vw, 100%), 100%, 480px); margin: 0 auto; }
+  #video.video-on { width: min(100%, 480px); margin: 0 auto; }
+  .side-resize, .video-resize { display: none; }
 }
 @media (max-width: 640px) {
   :root { --cw: 58px; --ch: 82px; }
