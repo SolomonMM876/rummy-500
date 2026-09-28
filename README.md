@@ -8,7 +8,7 @@ Play Rummy 500 against a friend, each in your own browser. No accounts, nothing 
 2. Send your friend the invite link. They open it, type their name, and join.
 3. Pick the settings (cards dealt, scoring system, Jokers, target score) and deal.
 
-Extras: **👉 Poke** your opponent, **✋ Fake grab** (a hand reaches into the discard pile and puts it all back at the last second), **😏 Taunt** from a menu of 12, pick your own **card back** (animals and mushrooms; your opponent sees your hand in it), and a chime when it's your turn.
+Extras: **👉 Poke** your opponent, **✋ Fake grab** on your turn (a hand reaches into the discard pile and puts it all back), **😏 Taunt** from a menu of 12, and **📷 video chat** in the side panel. **⚔️ Attacks** are purely visual: you each start with one wild attack, and whoever scores more in a hand gets three for the next one (break the table in half, release spiders, or make mushrooms sprout). **Card style** picks your card back (animals and mushrooms) and whether a hand or a foot picks up your cards. Drag cards to rearrange your hand, and listen for the chime when it's your turn.
 
 The player who starts the table is the host: their browser runs the game and saves it, so keep that tab open while you play. If either of you reloads or drops out, the game picks up where it left off. The two browsers talk directly over WebRTC; the free [PeerJS](https://peerjs.com) server only introduces them.
 

@@ -32,20 +32,37 @@
     'host-offline': 'The host’s table isn’t open right now. Waiting for them…',
     reconnecting: 'Connection lost. Reconnecting…',
   };
-  // Card backs: [id, name, emoji in the middle ('' = pattern only)]. The patterns live in style.css.
+  // Card backs. `emoji` or `art` (an SVG from ART) sits in the middle; the patterns live in style.css.
   const BACKS = [
-    ['classic', 'Classic', ''],
-    ['amanita', 'Fly agaric', '🍄'],
-    ['forest', 'Mushroom patch', ''],
-    ['fox', 'Fox', '🦊'],
-    ['owl', 'Owl', '🦉'],
-    ['frog', 'Frog', '🐸'],
-    ['hedgehog', 'Hedgehog', '🦔'],
-    ['cat', 'Cat', '🐱'],
-    ['bee', 'Bee', '🐝'],
+    { id: 'classic', name: 'Classic' },
+    { id: 'amanita', name: 'Fly agaric', emoji: '🍄' },
+    { id: 'forest', name: 'Mushroom patch' },
+    { id: 'morel', name: 'Morels', art: 'morel' },
+    { id: 'chanterelle', name: 'Chanterelles', art: 'chanterelle' },
+    { id: 'porcini', name: 'Porcini', art: 'porcini' },
+    { id: 'turkeytail', name: 'Turkey tail' },
+    { id: 'mushcat', name: 'Toadstool cat', art: 'mushcat' },
+    { id: 'blackcat', name: 'Black cat', art: 'blackcat' },
+    { id: 'cat', name: 'Cat', emoji: '🐱' },
+    { id: 'fox', name: 'Fox', emoji: '🦊' },
+    { id: 'owl', name: 'Owl', emoji: '🦉' },
+    { id: 'frog', name: 'Frog', emoji: '🐸' },
+    { id: 'hedgehog', name: 'Hedgehog', emoji: '🦔' },
+    { id: 'bee', name: 'Bee', emoji: '🐝' },
   ];
-  const BACK_BY_ID = Object.fromEntries(BACKS.map((b) => [b[0], b]));
+  const BACK_BY_ID = Object.fromEntries(BACKS.map((b) => [b.id, b]));
   const BACK_IDS = new Set(Object.keys(BACK_BY_ID));
+  // How your draws look to both players: nothing, or a hand or foot that swoops in and carries the card off.
+  const GRAB_STYLES = { none: { label: 'Nothing' }, hand: { label: '✋ Hand', emoji: '✋' }, foot: { label: '🦶 Foot', emoji: '🦶' } };
+  const isGrab = (g) => Object.prototype.hasOwnProperty.call(GRAB_STYLES, g);
+  // Hand-drawn art for card backs (and the mushroom bloom attack), on a 40×40 grid.
+  const ART = {
+    morel: '<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M16.5 27.5Q15.5 33 17 36.5L23 36.5Q24.5 33 23.5 27.5Z" fill="#f1e4c8"/><path d="M20 3.5C27 7.5 29.5 18 26.5 28.5L13.5 28.5C10.5 18 13 7.5 20 3.5Z" fill="#b8895a"/><g fill="#6f4a2a"><ellipse cx="17.6" cy="10" rx="1.5" ry="2.1"/><ellipse cx="22.2" cy="9.6" rx="1.5" ry="2.1"/><ellipse cx="15.6" cy="15.2" rx="1.6" ry="2.3"/><ellipse cx="20" cy="14.8" rx="1.7" ry="2.3"/><ellipse cx="24.4" cy="15.2" rx="1.6" ry="2.3"/><ellipse cx="15.2" cy="20.8" rx="1.7" ry="2.4"/><ellipse cx="19.9" cy="20.4" rx="1.8" ry="2.5"/><ellipse cx="24.7" cy="20.8" rx="1.7" ry="2.4"/><ellipse cx="17.4" cy="25.6" rx="1.7" ry="1.8"/><ellipse cx="22.5" cy="25.6" rx="1.7" ry="1.8"/></g></svg>',
+    chanterelle: '<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M5 12C8 8.5 12 11 15 9.5C18 8 22 10.5 25 9C28.5 7.5 32 10 35 12C33.5 15 27.5 17.5 24 19.5C23.2 25 23 31 22.6 36L17.4 36C17 31 16.8 25 16 19.5C12.5 17.5 6.5 15 5 12Z" fill="#f3a632"/><path d="M5 12C12 14.8 28 14.8 35 12" fill="none" stroke="#c77a12" stroke-width="1"/><g fill="none" stroke="#d98718" stroke-width=".8" stroke-linecap="round"><path d="M9.5 13.6Q15 17 18 24"/><path d="M14 14.4Q17.6 18 19.2 27"/><path d="M26 14.4Q22.4 18 20.8 27"/><path d="M30.5 13.6Q25 17 22 24"/></g><path d="M11 11.2C15 10.2 18 11.5 21 10.6" fill="none" stroke="#ffd27a" stroke-width="1.2" stroke-linecap="round"/></svg>',
+    porcini: '<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M13 22C10.5 30 13 36.5 20 36.5C27 36.5 29.5 30 27 22Z" fill="#efe3c6"/><path d="M15.5 26L24.5 26M15 29.5L25 29.5M15.8 33L24.2 33" stroke="#d8c7a0" stroke-width=".7"/><path d="M4.5 22.5C4.5 11 12 5.5 20 5.5C28 5.5 35.5 11 35.5 22.5Z" fill="#7b4a26"/><rect x="6" y="21.2" width="28" height="2.6" rx="1.3" fill="#d6b86a"/><path d="M9 16C10.5 11.5 14.5 9 19 8.6" fill="none" stroke="#a66d3d" stroke-width="2" stroke-linecap="round"/></svg>',
+    mushcat: '<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M10 22L11 12.5L17 17.5ZM30 22L29 12.5L23 17.5Z" fill="#f2a65a"/><circle cx="20" cy="25.5" r="10" fill="#f2a65a"/><path d="M11.5 18.5C11.5 9 28.5 9 28.5 18.5Z" fill="#d7322b"/><g fill="#fff"><circle cx="16" cy="14" r="1.5"/><circle cx="21" cy="12" r="1.7"/><circle cx="25" cy="15.5" r="1.2"/></g><rect x="12" y="17.6" width="16" height="1.8" rx=".9" fill="#f6e7c8"/><g fill="#2a2a2a"><ellipse cx="16" cy="25" rx="1.6" ry="2.2"/><ellipse cx="24" cy="25" rx="1.6" ry="2.2"/></g><g fill="#fff"><circle cx="16.5" cy="24.2" r=".5"/><circle cx="24.5" cy="24.2" r=".5"/></g><path d="M19 28.4L21 28.4L20 29.7Z" fill="#e0707a"/><path d="M20 29.7Q18.6 31.4 17.2 30.5M20 29.7Q21.4 31.4 22.8 30.5" fill="none" stroke="#2a2a2a" stroke-width=".8" stroke-linecap="round"/><g stroke="#8a5a30" stroke-width=".6" stroke-linecap="round"><path d="M13 28L7.5 27"/><path d="M13 29.6L7.5 30.6"/><path d="M27 28L32.5 27"/><path d="M27 29.6L32.5 30.6"/></g></svg>',
+    blackcat: '<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M14 35C6.5 35 5.5 27.5 9.5 26" fill="none" stroke="#1b1b22" stroke-width="2.4" stroke-linecap="round"/><path d="M13.5 36.5C12.5 29 15 25 20 25C25 25 27.5 29 26.5 36.5Z" fill="#1b1b22"/><circle cx="20" cy="20" r="5.4" fill="#1b1b22"/><path d="M15.2 18.2L15.4 12.4L18.6 15.4ZM24.8 18.2L24.6 12.4L21.4 15.4Z" fill="#1b1b22"/><g fill="#f5d547"><ellipse cx="18" cy="20" rx="1.1" ry="1.5"/><ellipse cx="22" cy="20" rx="1.1" ry="1.5"/></g><g fill="#1b1b22"><rect x="17.8" y="19" width=".4" height="2" rx=".2"/><rect x="21.8" y="19" width=".4" height="2" rx=".2"/></g><path d="M28 33.8A3.6 3 0 0 1 35.2 33.8Z" fill="#d7322b"/><rect x="30.7" y="33.8" width="1.8" height="3" rx=".8" fill="#f4ead2"/><circle cx="30.4" cy="32.2" r=".6" fill="#fff"/><circle cx="33" cy="32.6" r=".5" fill="#fff"/><path d="M34.2 36.2A2.2 1.9 0 0 1 38.6 36.2Z" fill="#d7322b"/><rect x="35.9" y="36.2" width="1.1" height="1.8" rx=".5" fill="#f4ead2"/></svg>',
+  };
   // Taunts: [id, emoji, text]. Both players' pages need the same ids.
   const TAUNTS = [
     ['nice', '😏', 'Nice try.'],
@@ -62,6 +79,12 @@
     ['gg', '🤝', 'Good game!'],
   ];
   const TAUNT_BY_ID = Object.fromEntries(TAUNTS.map((t) => [t[0], t]));
+  // Attacks you earn by winning a hand (the rules live in engine.js).
+  const ATTACK_INFO = {
+    smash: { emoji: '🪓', label: 'Break the table', blurb: 'crack their table in half', sent: (n) => `You smashed ${n}’s table in half!` },
+    spiders: { emoji: '🕷️', label: 'Release spiders', blurb: 'set spiders loose on their screen', sent: (n) => `You set spiders loose on ${n}!` },
+    bloom: { emoji: '🍄', label: 'Mushroom bloom', blurb: 'sprout mushrooms all over their table', sent: (n) => `Mushrooms are sprouting all over ${n}’s table!` },
+  };
 
   // ---------- helpers ----------
 
@@ -106,6 +129,7 @@
   const clone = (o) => JSON.parse(JSON.stringify(o));
   const cleanName = (s) => String(s || '').replace(/\s+/g, ' ').trim();
   const myBack = () => (BACK_IDS.has(store.get('r500:back')) ? store.get('r500:back') : 'classic');
+  const myGrab = () => (isGrab(store.get('r500:grab')) ? store.get('r500:grab') : 'none');
   const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
   const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
   const initial = (name) => (name || '?').trim().charAt(0).toUpperCase();
@@ -168,6 +192,7 @@
       this.peer = peer;
       peer.on('open', () => this.cb.onStatus('ready'));
       peer.on('connection', (conn) => this.accept(conn));
+      peer.on('call', (call) => this.cb.onCall(call));
       peer.on('disconnected', () => {
         if (this.stopped || peer.destroyed) return;
         setTimeout(() => { if (!peer.destroyed && peer.disconnected) peer.reconnect(); }, 1500);
@@ -203,6 +228,7 @@
       if (msg.type === 'ping') conn.send({ type: 'pong' });
       else if (msg.type === 'poke') this.cb.onPoke(this.names()[1] || 'Your friend');
       else if (msg.type === 'emote') this.cb.onEmote(msg.emote);
+      else if (msg.type === 'video') this.cb.onVideo(Boolean(msg.on));
       else if (msg.type === 'act') {
         const err = this.act(1, msg.action);
         if (err) conn.send({ type: 'error', msg: err });
@@ -227,10 +253,12 @@
       seat.token = token;
       if (this.t.lobby || !seat.name) seat.name = cleanName(msg.name) || 'Friend';
       if (BACK_IDS.has(msg.back)) seat.back = msg.back;
+      if (isGrab(msg.grab)) seat.grab = msg.grab;
       this.conn = conn;
       this.lastSeen = Date.now();
       this.online = true;
       conn.send({ type: 'welcome', seat: 1 });
+      this.cb.onLink();
       saveTable(this.t);
       this.broadcast();
     }
@@ -239,6 +267,7 @@
       if (this.online === on) return;
       this.online = on;
       this.broadcast();
+      if (!on) this.cb.onVideo(false);
     }
 
     names() {
@@ -263,6 +292,9 @@
       } else if (action.type === 'back') {
         if (!BACK_IDS.has(action.back)) return 'Unknown card back.';
         t.players[seat].back = action.back;
+      } else if (action.type === 'grab') {
+        if (!isGrab(action.grab)) return 'Unknown pick-up style.';
+        t.players[seat].grab = action.grab;
       } else {
         if (!t.game || t.lobby) return 'The game hasn’t started yet.';
         const g = clone(t.game); // apply to a copy so a rejected move changes nothing
@@ -279,13 +311,14 @@
       const t = this.t;
       const online = [true, this.online];
       const backs = t.players.map((p) => p.back || 'classic');
+      const grabs = t.players.map((p) => p.grab || 'none');
       if (t.lobby || !t.game) {
         return {
-          phase: 'lobby', seat, code: t.code, settings: t.settings, names: t.players.map((p) => p.name), online, backs,
+          phase: 'lobby', seat, code: t.code, settings: t.settings, names: t.players.map((p) => p.name), online, backs, grabs,
           lastGame: t.game ? { names: t.game.names, totals: t.game.totals } : null,
         };
       }
-      return { ...E.viewFor(t.game, seat), code: t.code, online, backs };
+      return { ...E.viewFor(t.game, seat), code: t.code, online, backs, grabs };
     }
 
     broadcast() {
@@ -309,6 +342,14 @@
       if (!this.conn || !this.conn.open || !this.online) return false;
       this.conn.send({ type: 'emote', emote: e });
       return true;
+    }
+
+    sendVideo(on) {
+      if (this.conn && this.conn.open) this.conn.send({ type: 'video', on });
+    }
+
+    call(stream) {
+      return this.conn && this.conn.open ? this.peer.call(this.conn.peer, stream) : null;
     }
 
     stop() {
@@ -339,6 +380,7 @@
       const peer = new Peer({ debug: 1 });
       this.peer = peer;
       peer.on('open', () => this.connect());
+      peer.on('call', (call) => this.cb.onCall(call));
       peer.on('disconnected', () => {
         if (this.stopped || peer.destroyed) return;
         setTimeout(() => { if (!peer.destroyed && peer.disconnected) peer.reconnect(); }, 1500);
@@ -374,7 +416,7 @@
       conn.on('open', () => {
         clearTimeout(this.openTimer);
         this.lastHeard = Date.now();
-        conn.send({ type: 'hello', token: this.token, name: this.name, back: myBack() });
+        conn.send({ type: 'hello', token: this.token, name: this.name, back: myBack(), grab: myGrab() });
       });
       conn.on('data', (msg) => { if (this.conn === conn) this.onData(msg); });
       const lost = () => {
@@ -400,10 +442,12 @@
       if (!msg || typeof msg !== 'object') return;
       this.lastHeard = Date.now();
       if (msg.type === 'welcome' || msg.type === 'view') this.cb.onStatus('connected');
+      if (msg.type === 'welcome') this.cb.onLink();
       if (msg.type === 'view') this.cb.onView(msg.view);
       else if (msg.type === 'error') this.cb.onError(String(msg.msg));
       else if (msg.type === 'poke') this.cb.onPoke(cleanName(msg.from) || 'Your friend');
       else if (msg.type === 'emote') this.cb.onEmote(msg.emote);
+      else if (msg.type === 'video') this.cb.onVideo(Boolean(msg.on));
       else if (msg.type === 'full' || msg.type === 'replaced') {
         this.stop();
         this.cb.onStatus(msg.type);
@@ -441,6 +485,14 @@
       return true;
     }
 
+    sendVideo(on) {
+      if (this.conn && this.conn.open) this.conn.send({ type: 'video', on });
+    }
+
+    call(stream) {
+      return this.peer && !this.peer.destroyed ? this.peer.call(PEER_PREFIX + this.code, stream) : null;
+    }
+
     stop() {
       this.stopped = true;
       clearInterval(this.beat);
@@ -464,7 +516,9 @@
     orderKey: null,
     fresh: new Set(),
     cool: { poke: 0, fake: 0, taunt: 0 }, // when each social button can be used again
-    tauntMenu: null,
+    menu: null, // the open popup menu: { kind, el }
+    drag: null, // a card being dragged within your hand
+    attackSeen: undefined, // the last attack already played on this page
     summaryKey: null,
     modal: null,
     dragId: null,
@@ -475,6 +529,9 @@
     onStatus: (status) => setStatus(status),
     onPoke: (from) => gotPoke(from),
     onEmote: (e) => gotEmote(e),
+    onVideo: (on) => gotVideo(on),
+    onCall: (call) => gotCall(call),
+    onLink: () => linked(),
     onError: (msg) => toast(msg, 'error'),
   };
 
@@ -500,10 +557,11 @@
   }
 
   function leaveTable() {
+    shutVideo();
     if (ui.net) ui.net.stop();
     closeModal();
-    closeTauntMenu();
-    Object.assign(ui, { net: null, role: null, code: null, view: null, status: 'idle', summaryKey: null, orderKey: null, order: [] });
+    closeMenu();
+    Object.assign(ui, { net: null, role: null, code: null, view: null, status: 'idle', summaryKey: null, orderKey: null, order: [], attackSeen: undefined, drag: null });
     ui.selected.clear();
     ui.fresh.clear();
   }
@@ -601,7 +659,7 @@
       const name = takeName(input);
       if (!name) return;
       const code = randomCode();
-      saveTable({ code, created: Date.now(), lobby: true, settings: { ...DEFAULTS }, players: [{ name, token: 'host', back: myBack() }, { name: null, token: null }], game: null });
+      saveTable({ code, created: Date.now(), lobby: true, settings: { ...DEFAULTS }, players: [{ name, token: 'host', back: myBack(), grab: myGrab() }, { name: null, token: null }], game: null });
       location.hash = code;
     };
     const input = nameInput(create);
@@ -693,9 +751,9 @@
       h('div', { class: 'back-row' },
         backEl(v.backs && v.backs[v.seat], 'sm'),
         h('div', null,
-          h('strong', null, 'Your card back: '), (BACK_BY_ID[v.backs && v.backs[v.seat]] || BACK_BY_ID.classic)[1],
+          h('strong', null, 'Your card back: '), (BACK_BY_ID[v.backs && v.backs[v.seat]] || BACK_BY_ID.classic).name,
           h('div', { class: 'muted small' }, 'Your friend sees your cards with this design.')),
-        h('button', { class: 'btn small', onclick: chooseBack }, 'Change')),
+        h('button', { class: 'btn small', onclick: chooseStyle }, 'Change')),
       v.lastGame ? h('p', { class: 'fine' }, `Last game: ${v.lastGame.names[0]} ${v.lastGame.totals[0]}, ${v.lastGame.names[1]} ${v.lastGame.totals[1]}.`) : null,
       settingsForm(v, host),
       h('div', { class: 'lobby-start' }, host
@@ -770,8 +828,11 @@
             h('div', { class: 'status', id: 'status', 'aria-live': 'polite' }),
             h('div', { class: 'hand', id: 'hand' }),
             h('div', { class: 'controls', id: 'controls' }))),
-        h('aside', { class: 'side', id: 'side' })));
+        h('aside', { class: 'side', id: 'side' },
+          h('section', { id: 'video', class: 'panel' }),
+          h('div', { id: 'side-panels', class: 'side-panels' }))));
     }
+    const pilesBefore = pileRects(); // where the cards were, for the pick-up animation
     syncHand(prev);
     renderTopbar();
     renderOpp();
@@ -783,6 +844,19 @@
     syncSummary();
     const myTurn = (x) => x && x.phase === 'play' && x.turn === x.seat && x.handNo === v.handNo && x.gameNo === v.gameNo;
     if (prev && v.step === 'draw' && myTurn(v) && !myTurn(prev)) yourTurnCue();
+    if (prev && prev.handNo !== v.handNo && v.phase === 'play') {
+      if (charges(v, v.seat)) toast('⚔️ You won the last hand, so you get three attacks to use this hand. They’re next to Taunt.', 'poke');
+      else if (charges(v, 1 - v.seat)) toast(`⚔️ ${v.names[1 - v.seat]} won the last hand and has attacks to use on you. Watch out!`);
+    }
+    if (!ui.wildHinted && v.phase === 'play' && v.wild && v.wild[v.seat] > 0) {
+      ui.wildHinted = true;
+      setTimeout(() => toast('⭐ You each start the game with a wild attack. Use it whenever you like with ⚔️ Attacks, next to Taunt.'), 1200);
+    }
+    renderVideo();
+    syncAttack();
+    const drew = prev && prev.phase === 'play' && v.phase === 'play' && prev.handNo === v.handNo && prev.gameNo === v.gameNo &&
+      prev.turn === v.turn && prev.step === 'draw' && v.step === 'play';
+    if (drew) pickupCue(pilesBefore);
   }
 
   // Keep your own card order between updates: new cards go on the right and glow.
@@ -840,7 +914,7 @@
         h('span', null, `First to ${st.target}`)),
       h('div', { class: 'tb-actions' },
         ui.role === 'host' ? h('button', { class: 'btn ghost small', onclick: copyInvite }, 'Invite link') : null,
-        h('button', { class: 'btn ghost small', onclick: chooseBack }, 'Card back'),
+        h('button', { class: 'btn ghost small', onclick: chooseStyle }, 'Card style'),
         h('button', { class: 'btn ghost small', onclick: showRules }, 'Rules'),
         h('a', { class: 'btn ghost small', href: '#', title: 'Back to the start page. The game is saved.' }, 'Leave')));
   }
@@ -854,6 +928,8 @@
     const offline = online ? null : `${v.names[o]} isn’t connected`;
     const onTable = E.pointsOnTable(v.melds, v.settings)[o];
     const wait = (kind) => Math.max(0, Math.ceil((ui.cool[kind] - Date.now()) / 1000));
+    const menuOpen = (kind) => String(Boolean(ui.menu && ui.menu.kind === kind));
+    const armed = charges(v, v.seat);
     const backs = h('div', { class: 'opp-hand', 'aria-label': `${v.names[o]} has ${plural(n, 'card')}` },
       Array.from({ length: n }, () => backEl(v.backs && v.backs[o], 'sm')));
     $('#opp').replaceChildren(
@@ -862,7 +938,8 @@
         h('div', { class: 'who-text' },
           h('div', { class: 'who-name' }, nm(v.names[o]),
             h('span', { class: 'dot ' + (online ? 'on' : 'off'), title: online ? 'Connected' : 'Not connected' }),
-            online ? null : h('span', { class: 'muted small' }, ' offline')),
+            online ? null : h('span', { class: 'muted small' }, ' offline'),
+            charges(v, o) ? h('span', { class: 'armed', title: `${v.names[o]} won the last hand and has attacks to use this hand` }, '⚔️') : null),
           h('div', { class: 'who-sub' }, `${plural(n, 'card')} · ${onTable} on the table this hand · ${v.totals[o]} total`)),
         theirTurn ? h('span', { class: 'badge' }, v.step === 'draw' ? 'Drawing…' : 'Playing…') : null),
       backs,
@@ -872,13 +949,18 @@
           title: offline || 'Nudge them with a sound and a message',
         }, wait('poke') ? `Poked (${wait('poke')})` : '👉 Poke'),
         h('button', {
-          class: 'btn small', disabled: Boolean(offline) || v.phase !== 'play' || !v.discard.length || wait('fake') > 0, onclick: doFake,
-          title: offline || 'Reach for the discard pile, then put it all back at the last second',
+          class: 'btn small', disabled: Boolean(offline) || v.phase !== 'play' || v.turn !== v.seat || !v.discard.length || wait('fake') > 0, onclick: doFake,
+          title: offline || (v.turn !== v.seat ? 'Only on your turn' : 'Reach for the discard pile, then put it all back at the last second'),
         }, '✋ Fake grab'),
         h('button', {
-          class: 'btn small', id: 'taunt-btn', disabled: Boolean(offline) || wait('taunt') > 0, onclick: toggleTauntMenu,
-          title: offline || 'Send a taunt', 'aria-haspopup': 'menu', 'aria-expanded': String(Boolean(ui.tauntMenu)),
-        }, '😏 Taunt')));
+          class: 'btn small', 'data-menu': 'taunt', disabled: Boolean(offline) || wait('taunt') > 0, onclick: (e) => toggleMenu(e, 'taunt'),
+          title: offline || 'Send a taunt', 'aria-haspopup': 'menu', 'aria-expanded': menuOpen('taunt'),
+        }, '😏 Taunt'),
+        armed ? h('button', {
+          class: 'btn small attack', id: 'attack-btn', 'data-menu': 'attack', disabled: Boolean(offline) || v.phase !== 'play',
+          onclick: (e) => toggleMenu(e, 'attack'), title: offline || 'You won the last hand: use your attacks',
+          'aria-haspopup': 'menu', 'aria-expanded': menuOpen('attack'),
+        }, `⚔️ Attacks (${armed})`) : null));
     fitRow(backs, 4);
   }
 
@@ -971,6 +1053,7 @@
   }
 
   function renderHand() {
+    if (ui.drag && ui.drag.active) { ui.drag.rerender = true; return; } // don't pull the hand out from under a drag
     const v = ui.view;
     const myTurn = v.phase === 'play' && v.turn === v.seat;
     const inHand = new Set(v.hand);
@@ -980,32 +1063,15 @@
       const keep = myTurn && v.step === 'play' && v.ti.topOnly === id;
       const el = cardEl(id, { cls: [ui.selected.has(id) && 'sel', ui.fresh.has(id) && 'fresh', must && 'must'].filter(Boolean).join(' ') });
       el.style.setProperty('--i', k); // staggers the your-turn wave
-      el.draggable = true;
       el.tabIndex = 0;
       el.setAttribute('role', 'button');
       el.setAttribute('aria-pressed', String(ui.selected.has(id)));
       el.setAttribute('aria-label', E.label(id));
       if (must) el.append(h('span', { class: 'tag' }, 'must play'));
       else if (keep) el.append(h('span', { class: 'tag muted' }, 'can’t discard'));
-      el.addEventListener('click', () => toggleSelect(id));
+      el.addEventListener('pointerdown', (e) => startDrag(e, id, el));
+      el.addEventListener('click', () => { if (!ui.dragEnded) toggleSelect(id); });
       el.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSelect(id); } });
-      el.addEventListener('dragstart', (e) => {
-        ui.dragId = id;
-        e.dataTransfer.effectAllowed = 'move';
-        e.dataTransfer.setData('text/plain', id);
-        el.classList.add('dragging');
-      });
-      el.addEventListener('dragend', () => { ui.dragId = null; el.classList.remove('dragging'); });
-      el.addEventListener('dragover', (e) => { if (ui.dragId && ui.dragId !== id) e.preventDefault(); });
-      el.addEventListener('drop', (e) => {
-        e.preventDefault();
-        if (!ui.dragId || ui.dragId === id) return;
-        // Cards overlap, so compare against the middle of the part you can see.
-        const r = el.getBoundingClientRect();
-        const next = el.nextElementSibling;
-        const visible = next ? next.getBoundingClientRect().left - r.left : r.width;
-        moveCard(ui.dragId, id, e.clientX > r.left + visible / 2);
-      });
       return el;
     }));
     fitRow(row, 8);
@@ -1035,7 +1101,7 @@
     const me = v.seat;
     const o = 1 - me;
     const cell = (x) => h('td', { class: x > 0 ? 'pos' : x < 0 ? 'neg' : null }, E.signed(x));
-    $('#side').replaceChildren(
+    $('#side-panels').replaceChildren(
       h('section', { class: 'panel' },
         h('h3', null, 'Scores', h('span', { class: 'muted' }, ` · first to ${v.settings.target}`)),
         h('table', { class: 'scores' },
@@ -1106,15 +1172,6 @@
     ui.selected.clear();
     renderHand();
     renderMelds();
-  }
-
-  function moveCard(from, to, after) {
-    const order = ui.order.filter((id) => id !== from);
-    const i = order.indexOf(to);
-    order.splice(after ? i + 1 : i, 0, from);
-    ui.order = order;
-    saveOrder();
-    renderHand();
   }
 
   const selectedInOrder = () => ui.order.filter((id) => ui.selected.has(id));
@@ -1213,20 +1270,45 @@
   // A player's name in a tight spot: cut short with "…", full name on hover.
   const nm = (name) => h('span', { class: 'nm', title: name }, name);
 
+  const oppName = () => (ui.view ? ui.view.names[1 - ui.view.seat] : 'Your friend');
+  const charges = (v, seat) => {
+    const a = (v.attacks && v.attacks[seat]) || {};
+    return E.ATTACKS.reduce((sum, k) => sum + (a[k] || 0), (v.wild && v.wild[seat]) || 0);
+  };
+
   function backEl(design, cls) {
     const b = BACK_BY_ID[design] || BACK_BY_ID.classic;
-    return h('div', { class: `card back back-${b[0]}${cls ? ' ' + cls : ''}` },
-      b[2] ? h('span', { class: 'back-art', 'aria-hidden': 'true' }, b[2]) : null);
+    const el = h('div', { class: `card back back-${b.id}${cls ? ' ' + cls : ''}` });
+    if (b.emoji) el.append(h('span', { class: 'back-art', 'aria-hidden': 'true' }, b.emoji));
+    else if (b.art) {
+      const art = h('span', { class: 'back-art', 'aria-hidden': 'true' });
+      art.innerHTML = ART[b.art];
+      el.append(art);
+    }
+    return el;
   }
 
-  function chooseBack() {
+  function chooseStyle() {
     const v = ui.view;
     const current = v && v.backs ? v.backs[v.seat] : myBack();
+    const grab = myGrab();
     openModal({
-      title: 'Choose your card back',
+      title: 'Card style',
+      wide: true,
       body: [
+        h('h3', { class: 'modal-sub' }, 'Pick up cards with'),
+        h('p', null, 'Whenever you draw, it swoops in and carries the card off. Your friend sees it too.'),
+        h('div', { class: 'seg', role: 'radiogroup' }, Object.entries(GRAB_STYLES).map(([id, g]) => h('button', {
+          type: 'button', role: 'radio', class: id === grab ? 'on' : null, 'aria-checked': String(id === grab),
+          onclick: () => {
+            store.set('r500:grab', id);
+            send({ type: 'grab', grab: id });
+            chooseStyle(); // redraw with the new choice highlighted
+          },
+        }, g.label))),
+        h('h3', { class: 'modal-sub' }, 'Card back'),
         h('p', null, 'Your friend sees your hand with this design, and it’s on the draw pile on your screen.'),
-        h('div', { class: 'back-grid' }, BACKS.map(([id, name]) => h('button', {
+        h('div', { class: 'back-grid' }, BACKS.map(({ id, name }) => h('button', {
           type: 'button', class: 'back-choice' + (id === current ? ' on' : ''), 'aria-pressed': String(id === current),
           onclick: () => {
             store.set('r500:back', id);
@@ -1235,7 +1317,7 @@
           },
         }, backEl(id), h('span', null, name)))),
       ],
-      actions: [h('button', { class: 'btn ghost', onclick: closeModal }, 'Cancel')],
+      actions: [h('button', { class: 'btn ghost', onclick: closeModal }, 'Done')],
     });
   }
 
@@ -1249,7 +1331,7 @@
   }
 
   function poke() {
-    const name = ui.view.names[1 - ui.view.seat];
+    const name = oppName();
     if (!ui.net.poke()) { toast(`${name} isn’t connected right now.`, 'error'); return; }
     toast(`You poked ${name}.`);
     startCooldown('poke');
@@ -1266,7 +1348,7 @@
 
   function sendEmote(e) {
     if (ui.net && ui.net.emote(e)) return true;
-    toast(`${ui.view.names[1 - ui.view.seat]} isn’t connected right now.`, 'error');
+    toast(`${oppName()} isn’t connected right now.`, 'error');
     return false;
   }
 
@@ -1277,7 +1359,7 @@
   }
 
   function doTaunt(id) {
-    closeTauntMenu();
+    closeMenu();
     if (!sendEmote({ kind: 'taunt', id })) return;
     startCooldown('taunt');
     showTaunt(id, 'me');
@@ -1285,42 +1367,60 @@
 
   function doFake() {
     const v = ui.view;
-    if (v.phase !== 'play' || !v.discard.length) return;
+    if (v.phase !== 'play' || v.turn !== v.seat || !v.discard.length) return;
     const index = Math.floor(rng() * v.discard.length);
     if (!sendEmote({ kind: 'fake', index })) return;
     startCooldown('fake');
     playFake(index, false);
   }
 
-  function toggleTauntMenu(e) {
-    if (ui.tauntMenu) { closeTauntMenu(); return; }
-    const r = e.currentTarget.getBoundingClientRect();
-    const width = Math.min(440, innerWidth - 16);
-    const menu = h('div', { class: 'taunt-menu', role: 'menu', 'aria-label': 'Taunts' },
-      TAUNTS.map(([id, emoji, text]) => h('button', { type: 'button', class: 'taunt', role: 'menuitem', onclick: () => doTaunt(id) },
-        h('span', { class: 'taunt-emoji', 'aria-hidden': 'true' }, emoji), h('span', null, text))));
-    Object.assign(menu.style, {
+  // Popup menus under the Taunt and Attacks buttons.
+  function menuItems(kind) {
+    if (kind === 'taunt') {
+      return TAUNTS.map(([id, emoji, text]) => h('button', { type: 'button', class: 'taunt', role: 'menuitem', onclick: () => doTaunt(id) },
+        h('span', { class: 'taunt-emoji', 'aria-hidden': 'true' }, emoji), h('span', null, text)));
+    }
+    const mine = (ui.view.attacks && ui.view.attacks[ui.view.seat]) || {};
+    const wild = (ui.view.wild && ui.view.wild[ui.view.seat]) || 0;
+    return [
+      wild ? h('div', { class: 'menu-note' }, '⭐ You have a wild attack: spend it on any of these.') : null,
+      ...E.ATTACKS.map((k) => h('button', { type: 'button', class: 'taunt', role: 'menuitem', disabled: !(mine[k] || wild), onclick: () => doAttack(k) },
+        h('span', { class: 'taunt-emoji', 'aria-hidden': 'true' }, ATTACK_INFO[k].emoji),
+        h('span', null, h('strong', null, ATTACK_INFO[k].label),
+          h('span', { class: 'muted' }, mine[k] ? `: ${ATTACK_INFO[k].blurb}` : wild ? `: ${ATTACK_INFO[k].blurb} (uses your wild attack)` : ' (used)')))),
+    ].filter(Boolean);
+  }
+
+  function toggleMenu(e, kind) {
+    const r = e.currentTarget.getBoundingClientRect(); // before closeMenu re-renders the button
+    const wasOpen = ui.menu && ui.menu.kind === kind;
+    closeMenu();
+    if (wasOpen) return;
+    const width = Math.min(kind === 'taunt' ? 440 : 330, innerWidth - 16);
+    const el = h('div', { class: `taunt-menu ${kind}-menu`, role: 'menu', 'aria-label': kind === 'taunt' ? 'Taunts' : 'Attacks' }, menuItems(kind));
+    Object.assign(el.style, {
       top: `${r.bottom + 8}px`,
       left: `${Math.max(8, Math.min(r.right - width, innerWidth - width - 8))}px`,
       width: `${width}px`,
     });
-    document.body.append(menu);
-    ui.tauntMenu = menu;
-    document.addEventListener('pointerdown', tauntOutside, true);
+    document.body.append(el);
+    ui.menu = { kind, el };
+    document.addEventListener('pointerdown', menuOutside, true);
     renderOpp();
-    menu.querySelector('button').focus();
+    const first = el.querySelector('button:not([disabled])');
+    if (first) first.focus();
   }
 
-  function tauntOutside(e) {
-    if (!ui.tauntMenu || ui.tauntMenu.contains(e.target) || (e.target.closest && e.target.closest('#taunt-btn'))) return;
-    closeTauntMenu();
+  function menuOutside(e) {
+    if (!ui.menu || ui.menu.el.contains(e.target) || (e.target.closest && e.target.closest('[data-menu]'))) return;
+    closeMenu();
   }
 
-  function closeTauntMenu() {
-    if (!ui.tauntMenu) return;
-    ui.tauntMenu.remove();
-    ui.tauntMenu = null;
-    document.removeEventListener('pointerdown', tauntOutside, true);
+  function closeMenu() {
+    if (!ui.menu) return;
+    ui.menu.el.remove();
+    ui.menu = null;
+    document.removeEventListener('pointerdown', menuOutside, true);
     if (ui.screen === 'game' && ui.view) renderOpp();
   }
 
@@ -1435,6 +1535,511 @@
     ], { duration: 2000, easing: 'ease-out' }).onfinish = () => pill.remove();
   }
 
+  // ---------- picking up with a hand or foot ----------
+
+  function pileRects() {
+    const stock = $('.stock');
+    return {
+      stock: stock ? stock.getBoundingClientRect() : null,
+      discard: [...document.querySelectorAll('.discard .card')].map((c) => c.getBoundingClientRect()),
+    };
+  }
+
+  // The drawing player's chosen hand or foot swoops in and carries the card off to their side.
+  function pickupCue(before) {
+    const v = ui.view;
+    const who = v.turn;
+    const style = v.grabs && v.grabs[who];
+    if (!isGrab(style) || style === 'none' || calm()) return;
+    const took = v.ti.took || [];
+    const from = v.ti.drew === 'stock' ? before.stock : before.discard[before.discard.length - Math.max(1, took.length)];
+    const mine = who === v.seat;
+    const dest = mine ? $('#hand') : $('#opp .opp-hand');
+    if (!from || !dest) return;
+    const d = dest.getBoundingClientRect();
+    const x = from.left + Math.min(from.width, 44) / 2 + 4;
+    const y = from.top + from.height * 0.45;
+    const tx = Math.max(d.left + 40, d.right - 40);
+    const ty = d.top + d.height / 2;
+    const sx = x + 160;
+    const sy = mine ? innerHeight + 90 : -90;
+    const hold = mine ? -44 : 44; // the card sits past the fingertips (or toes)
+    const limb = h('div', { class: 'fake-hand', 'aria-hidden': 'true' }, h('span', { class: mine ? 'up' : 'down' }, GRAB_STYLES[style].emoji));
+    const card = v.ti.drew === 'discard' && took.length ? cardEl(took[0], { cls: 'carried' }) : backEl(v.backs && v.backs[v.seat], 'carried');
+    card.setAttribute('aria-hidden', 'true');
+    fx().append(card, limb);
+    const at = (px, py, s = 1) => `translate(${px}px, ${py}px) scale(${s})`;
+    const cw = 50;
+    const ch = 71;
+    const T = 1300;
+    limb.animate([
+      { transform: at(sx, sy), opacity: 0 },
+      { transform: at(x, y), opacity: 1, offset: 0.36 },
+      { transform: at(x, y, 0.85), opacity: 1, offset: 0.46 },
+      { transform: at(tx, ty, 0.85), opacity: 1, offset: 0.86 },
+      { transform: at(tx, sy), opacity: 0 },
+    ], { duration: T, easing: 'ease-in-out' }).onfinish = () => limb.remove();
+    card.animate([
+      { transform: at(x - cw / 2, y + hold - ch / 2), opacity: 0 },
+      { transform: at(x - cw / 2, y + hold - ch / 2), opacity: 0, offset: 0.44 },
+      { transform: at(x - cw / 2, y + hold - ch / 2), opacity: 1, offset: 0.48 },
+      { transform: at(tx - cw / 2, ty + hold - ch / 2), opacity: 1, offset: 0.86 },
+      { transform: at(tx - cw / 2, ty + hold - ch / 2, 0.6), opacity: 0 },
+    ], { duration: T, easing: 'ease-in-out' }).onfinish = () => card.remove();
+  }
+
+  // ---------- attacks ----------
+
+  function doAttack(kind) {
+    closeMenu();
+    send({ type: 'attack', kind });
+  }
+
+  // Each attack plays once, when it first shows up in a view; a reload doesn't replay old ones.
+  function syncAttack() {
+    const la = ui.view.lastAttack;
+    const n = la ? la.n : 0;
+    if (ui.attackSeen === undefined || n < ui.attackSeen) { ui.attackSeen = n; return; }
+    if (n === ui.attackSeen) return;
+    ui.attackSeen = n;
+    if (la.by === ui.view.seat) launchAttack(la.kind);
+    else if (la.kind === 'smash') smashTable(ui.view.names[la.by]);
+    else if (la.kind === 'spiders') releaseSpiders(ui.view.names[la.by]);
+    else if (la.kind === 'bloom') mushroomBloom(ui.view.names[la.by]);
+  }
+
+  // What the attacker sees: the attack flies over to the other player.
+  function launchAttack(kind) {
+    const info = ATTACK_INFO[kind];
+    toast(`${info.emoji} ${info.sent(oppName())}`, 'poke');
+    const to = $('#opp .avatar');
+    if (calm() || !to) return;
+    const from = ($('#attack-btn') || $('#status')).getBoundingClientRect();
+    const end = to.getBoundingClientRect();
+    const el = h('div', { class: 'burst', 'aria-hidden': 'true' }, info.emoji);
+    Object.assign(el.style, { left: '0px', top: '0px', fontSize: '44px' });
+    fx().append(el);
+    const x0 = from.left + from.width / 2;
+    const y0 = from.top + from.height / 2;
+    const x1 = end.left + end.width / 2;
+    const y1 = end.top + end.height / 2;
+    el.animate([
+      { transform: `translate(${x0}px, ${y0}px) scale(0.6)`, opacity: 0 },
+      { transform: `translate(${(x0 + x1) / 2}px, ${Math.max(y0, y1) + 70}px) scale(1.5)`, opacity: 1, offset: 0.5 },
+      { transform: `translate(${x1}px, ${y1}px) scale(0.7)`, opacity: 0 },
+    ], { duration: 900, easing: 'ease-in-out' }).onfinish = () => el.remove();
+  }
+
+  // The table cracks down the middle, both halves fall off the screen, and it's rebuilt.
+  function smashTable(name) {
+    const board = $('.board');
+    const msg = `💥 ${name} smashed your table!`;
+    sfx('crack');
+    if (!board || calm() || board.dataset.smashed) { toast(msg, 'poke'); return; }
+    board.dataset.smashed = '1';
+    const r = board.getBoundingClientRect();
+    const w = r.width;
+    const ht = r.height;
+    const n = 14;
+    const pts = Array.from({ length: n + 1 }, (_, i) => [w / 2 + (i === 0 || i === n ? 0 : (rng() - 0.5) * 80), (ht * i) / n]);
+    const crackLine = pts.map(([x, y]) => `${x.toFixed(1)}px ${y.toFixed(1)}px`);
+    const place = (el) => Object.assign(el.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${w}px`, height: `${ht}px` });
+    const hole = h('div', { class: 'smash-void', 'aria-hidden': 'true' });
+    place(hole);
+    const half = (clip) => {
+      const c = board.cloneNode(true);
+      c.removeAttribute('id');
+      c.querySelectorAll('[id]').forEach((el) => el.removeAttribute('id'));
+      c.classList.add('board-half');
+      c.setAttribute('aria-hidden', 'true');
+      place(c);
+      Object.assign(c.style, { clipPath: clip, transformOrigin: `${w / 2}px ${ht}px` });
+      return c;
+    };
+    const left = half(`polygon(0px 0px, ${crackLine.join(', ')}, 0px ${ht}px)`);
+    const right = half(`polygon(${w}px 0px, ${w}px ${ht}px, ${crackLine.slice().reverse().join(', ')})`);
+    const ns = 'http://www.w3.org/2000/svg';
+    const crack = document.createElementNS(ns, 'svg');
+    crack.setAttribute('class', 'crack');
+    crack.setAttribute('viewBox', `0 0 ${w} ${ht}`);
+    place(crack);
+    const line = document.createElementNS(ns, 'polyline');
+    line.setAttribute('points', pts.map((p) => p.join(',')).join(' '));
+    crack.append(line);
+    fx().append(hole, left, right, crack);
+    board.style.visibility = 'hidden';
+    const len = ht * 1.4;
+    line.style.strokeDasharray = `${len}`;
+    line.animate([{ strokeDashoffset: len }, { strokeDashoffset: 0 }], { duration: 280, easing: 'ease-out', fill: 'forwards' });
+    crack.animate([{ opacity: 1 }, { opacity: 1, offset: 0.6 }, { opacity: 0 }], { duration: 650, fill: 'forwards' });
+    const game = $('.game');
+    if (game) {
+      game.animate([
+        { transform: 'translate(0, 0)' }, { transform: 'translate(-10px, 5px)' }, { transform: 'translate(9px, -6px)' },
+        { transform: 'translate(-5px, 3px)' }, { transform: 'translate(0, 0)' },
+      ], { duration: 420 });
+    }
+    const fall = (el, dir) => el.animate([
+      { transform: 'translate(0, 0) rotate(0deg)' },
+      { transform: `translate(${dir * 16}px, 8px) rotate(${dir * 5}deg)`, offset: 0.22 },
+      { transform: `translate(${dir * 140}px, ${innerHeight + ht}px) rotate(${dir * 38}deg)` },
+    ], { duration: 1600, delay: 320, easing: 'cubic-bezier(.5,0,.9,.5)', fill: 'forwards' });
+    fall(left, -1);
+    fall(right, 1);
+    const label = h('div', { class: 'attack-label', role: 'status' }, msg);
+    Object.assign(label.style, { left: `${r.left + w / 2}px`, top: `${r.top + ht / 2}px` });
+    setTimeout(() => {
+      fx().append(label);
+      label.animate([{ transform: 'scale(0.6)', opacity: 0 }, { transform: 'scale(1)', opacity: 1 }], { duration: 250, easing: 'ease-out' });
+    }, 900);
+    setTimeout(() => {
+      [hole, left, right, crack, label].forEach((el) => el.remove());
+      board.style.visibility = '';
+      delete board.dataset.smashed;
+      board.animate([{ opacity: 0, transform: 'scale(0.94)' }, { opacity: 1, transform: 'scale(1)' }], { duration: 500, easing: 'cubic-bezier(.2,1.3,.4,1)' });
+    }, 2800);
+  }
+
+  const SPIDER_SVG = '<svg viewBox="-20 -20 40 40" aria-hidden="true"><g class="legs" fill="none" stroke="#1d1712" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M-2.5 -3L-9 -9L-12 -17"/><path d="M-3 -1L-11 -4L-18 -7"/><path d="M-3 1.5L-11 4L-17 9"/><path d="M-2.5 3.5L-8 10L-11 17"/><path d="M2.5 -3L9 -9L12 -17"/><path d="M3 -1L11 -4L18 -7"/><path d="M3 1.5L11 4L17 9"/><path d="M2.5 3.5L8 10L11 17"/></g><ellipse cx="0" cy="-5" rx="3.4" ry="3.8" fill="#1d1712"/><ellipse cx="0" cy="4.5" rx="5.4" ry="7" fill="#2a1f17"/><path d="M-2 2Q0 4 2 2M-2 6Q0 8 2 6" fill="none" stroke="#6b3b2a" stroke-width=".8"/><circle cx="-1.3" cy="-7.2" r=".8" fill="#ff4a3d"/><circle cx="1.3" cy="-7.2" r=".8" fill="#ff4a3d"/></svg>';
+
+  function spiderEl(size) {
+    const el = h('div', { class: 'spider', 'aria-hidden': 'true' });
+    el.innerHTML = SPIDER_SVG;
+    el.style.width = `${size}px`;
+    el.style.height = `${size}px`;
+    return el;
+  }
+
+  // A route from one screen edge, through a few random points, off another edge.
+  function wanderPath() {
+    const W = innerWidth;
+    const H = innerHeight;
+    const edge = () => {
+      const t = rng();
+      return [[t * W, -40], [W + 40, t * H], [t * W, H + 40], [-40, t * H]][Math.floor(rng() * 4)];
+    };
+    const pts = [edge()];
+    const stops = 3 + Math.floor(rng() * 2);
+    for (let k = 0; k < stops; k++) pts.push([W * (0.08 + rng() * 0.84), H * (0.1 + rng() * 0.8)]);
+    pts.push(edge());
+    return pts;
+  }
+
+  // Three spiders drop down on threads while a swarm scuttles across the screen.
+  function releaseSpiders(name) {
+    sfx('skitter');
+    toast(`🕷️ ${name} released spiders on you!`, 'poke');
+    if (calm()) return;
+    const W = innerWidth;
+    const H = innerHeight;
+    for (let i = 0; i < 3; i++) {
+      const x = W * (0.22 + 0.28 * i) + (rng() - 0.5) * 80;
+      const drop = H * (0.22 + rng() * 0.3);
+      const timing = { duration: 4300 + rng() * 700, delay: i * 300, easing: 'ease-in-out', fill: 'backwards' };
+      const thread = h('div', { class: 'thread', 'aria-hidden': 'true' });
+      thread.style.left = `${x}px`;
+      const sp = spiderEl(42 + rng() * 12);
+      fx().append(thread, sp);
+      const at = (y, offset) => ({ transform: `translate(${x}px, ${y}px) translate(-50%, -50%) rotate(180deg)`, offset });
+      thread.animate([
+        { height: '0px' }, { height: `${drop}px`, offset: 0.25 }, { height: `${drop - 22}px`, offset: 0.45 },
+        { height: `${drop}px`, offset: 0.62 }, { height: `${drop}px`, offset: 0.8 }, { height: '0px' },
+      ], timing).onfinish = () => thread.remove();
+      sp.animate([at(-30, 0), at(drop, 0.25), at(drop - 22, 0.45), at(drop, 0.62), at(drop, 0.8), at(-30, 1)], timing)
+        .onfinish = () => sp.remove();
+    }
+    for (let i = 0; i < 10; i++) {
+      const sp = spiderEl(24 + rng() * 20);
+      fx().append(sp);
+      const pts = wanderPath();
+      let prevAngle = null;
+      const frames = pts.map(([x, y], k) => {
+        const [ax, ay] = pts[Math.max(0, k - 1)];
+        const [bx, by] = pts[Math.min(pts.length - 1, k + 1)];
+        let angle = (Math.atan2(by - ay, bx - ax) * 180) / Math.PI + 90; // the drawing faces up
+        if (prevAngle !== null) {
+          while (angle - prevAngle > 180) angle -= 360;
+          while (prevAngle - angle > 180) angle += 360;
+        }
+        prevAngle = angle;
+        return { transform: `translate(${x}px, ${y}px) translate(-50%, -50%) rotate(${angle}deg)` };
+      });
+      sp.animate(frames, { duration: 3400 + rng() * 2400, delay: rng() * 1500, easing: 'linear', fill: 'backwards' })
+        .onfinish = () => sp.remove();
+    }
+  }
+
+  // Toadstools, morels, chanterelles and porcini pop up all over the table, then wilt.
+  function mushroomBloom(name) {
+    sfx('pop');
+    toast(`🍄 ${name} made mushrooms sprout all over your table!`, 'poke');
+    if (calm()) return;
+    const area = ($('.board') || document.body).getBoundingClientRect();
+    const kinds = ['emoji', 'morel', 'chanterelle', 'porcini'];
+    for (let i = 0; i < 28; i++) {
+      const kind = kinds[i % kinds.length];
+      const size = 34 + rng() * 46;
+      const el = h('div', { class: 'sprout', 'aria-hidden': 'true' });
+      if (kind === 'emoji') {
+        el.textContent = '🍄';
+        el.style.fontSize = `${size * 0.85}px`;
+      } else {
+        el.innerHTML = ART[kind];
+      }
+      Object.assign(el.style, {
+        left: `${area.left + rng() * area.width}px`,
+        top: `${area.top + area.height * (0.12 + rng() * 0.88)}px`,
+        width: `${size}px`,
+        height: `${size}px`,
+      });
+      fx().append(el);
+      const tilt = (rng() - 0.5) * 18;
+      el.animate([
+        { transform: 'translate(-50%, -100%) scale(0)', opacity: 0 },
+        { transform: `translate(-50%, -100%) scale(1.18) rotate(${tilt}deg)`, opacity: 1, offset: 0.12 },
+        { transform: `translate(-50%, -100%) scale(1) rotate(${-tilt / 2}deg)`, opacity: 1, offset: 0.2 },
+        { transform: `translate(-50%, -100%) scale(1) rotate(${tilt / 3}deg)`, opacity: 1, offset: 0.82 },
+        { transform: 'translate(-50%, -100%) scale(0.2)', opacity: 0 },
+      ], { duration: 4300, delay: rng() * 1000, easing: 'ease-out', fill: 'backwards' }).onfinish = () => el.remove();
+    }
+  }
+
+  // ---------- rearranging your hand ----------
+  // Press on a card and drag: it lifts off and the other cards slide aside to show where it will land.
+
+  function startDrag(e, id, el) {
+    if (e.button !== 0 || ui.drag) return;
+    ui.drag = { id, el, pointerId: e.pointerId, x0: e.clientX, y0: e.clientY, active: false };
+    window.addEventListener('pointermove', onDragMove);
+    window.addEventListener('pointerup', onDragEnd);
+    window.addEventListener('pointercancel', onDragEnd);
+  }
+
+  function onDragMove(e) {
+    const d = ui.drag;
+    if (!d || e.pointerId !== d.pointerId) return;
+    if (!d.active) {
+      if (Math.hypot(e.clientX - d.x0, e.clientY - d.y0) < 6) return; // still a click
+      const r = d.el.getBoundingClientRect();
+      d.active = true;
+      d.offX = d.x0 - r.left;
+      d.offY = d.y0 - r.top;
+      d.ghost = d.el.cloneNode(true);
+      d.ghost.className = 'card drag-ghost ' + (E.isJoker(d.id) ? 'joker' : /[HD]$/.test(d.id) ? 'red' : 'black');
+      d.ghost.style.cssText = `width:${d.el.offsetWidth}px;height:${d.el.offsetHeight}px`;
+      document.body.append(d.ghost);
+      d.el.classList.add('placeholder');
+      $('#hand').classList.add('dragging');
+    }
+    e.preventDefault();
+    d.ghost.style.transform = `translate(${e.clientX - d.offX}px, ${e.clientY - d.offY}px) rotate(4deg)`;
+    const row = $('#hand');
+    const cards = [...row.children].filter((c) => c !== d.el);
+    const cw = d.el.offsetWidth;
+    const ov = parseFloat(row.style.getPropertyValue('--ov'));
+    const step = cw + (Number.isFinite(ov) ? ov : 8);
+    const x = e.clientX - row.getBoundingClientRect().left;
+    // Land in front of the first card whose visible middle is right of the pointer.
+    const before = cards.find((c, i) => x < c.offsetLeft + (i === cards.length - 1 ? cw : step) / 2) || null;
+    if (d.el.nextElementSibling !== before) flipMove(row, () => row.insertBefore(d.el, before));
+  }
+
+  // Move cards in the DOM, then slide each from where it was to where it is now.
+  function flipMove(row, mutate) {
+    const kids = [...row.children];
+    const first = kids.map((c) => c.offsetLeft);
+    mutate();
+    const moved = [];
+    kids.forEach((c, i) => {
+      const dx = first[i] - c.offsetLeft;
+      if (!dx) return;
+      c.style.transition = 'none';
+      c.style.translate = `${dx}px 0`;
+      moved.push(c);
+    });
+    if (!moved.length) return;
+    void row.offsetWidth;
+    moved.forEach((c) => {
+      c.style.transition = '';
+      c.style.translate = '';
+    });
+  }
+
+  function onDragEnd(e) {
+    const d = ui.drag;
+    if (!d || (e && e.pointerId !== d.pointerId)) return;
+    window.removeEventListener('pointermove', onDragMove);
+    window.removeEventListener('pointerup', onDragEnd);
+    window.removeEventListener('pointercancel', onDragEnd);
+    ui.drag = null;
+    if (!d.active) return; // a plain click: the click handler selects the card
+    $('#hand').classList.remove('dragging');
+    ui.dragEnded = true; // swallow the click that follows the drop
+    setTimeout(() => { ui.dragEnded = false; }, 0);
+    const shown = [...$('#hand').children].map((c) => c.dataset.id);
+    ui.order = shown.concat(ui.order.filter((id) => !shown.includes(id)));
+    saveOrder();
+    renderHand();
+    const landed = $(`#hand .card[data-id="${d.id}"]`);
+    if (!landed) { d.ghost.remove(); return; }
+    landed.classList.add('landing');
+    const r = landed.getBoundingClientRect();
+    const done = () => { d.ghost.remove(); landed.classList.remove('landing'); };
+    d.ghost.animate([{ transform: d.ghost.style.transform }, { transform: `translate(${r.left}px, ${r.top}px) rotate(0deg)` }], { duration: 130, easing: 'ease-out' })
+      .onfinish = done;
+    setTimeout(done, 400); // in case the animation can't run
+  }
+
+  // ---------- video chat ----------
+  // Each of you turns your camera on; once both are on, the guest calls the host over PeerJS
+  // (always that way round, so the two never call each other at once).
+
+  const video = { local: null, remote: null, call: null, peerOn: false, mic: true, cam: true, starting: false };
+
+  async function startVideo() {
+    if (video.local || video.starting) return;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      toast('This browser can’t use a camera on this page.', 'error');
+      return;
+    }
+    video.starting = true;
+    renderVideo();
+    try {
+      video.local = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 640 }, height: { ideal: 360 }, facingMode: 'user' },
+        audio: { echoCancellation: true, noiseSuppression: true },
+      });
+      video.mic = true;
+      video.cam = true;
+    } catch (err) {
+      const blocked = err && (err.name === 'NotAllowedError' || err.name === 'SecurityError');
+      toast(blocked
+        ? 'Camera access is blocked. Allow the camera and microphone for this site (look for the camera icon in the address bar), then try again.'
+        : `Couldn’t start your camera (${(err && err.name) || 'unknown error'}).`, 'error');
+    }
+    video.starting = false;
+    if (video.local && ui.net) {
+      ui.net.sendVideo(true);
+      maybeCall();
+    }
+    renderVideo();
+  }
+
+  function stopVideo() {
+    shutVideo();
+    if (ui.net) ui.net.sendVideo(false);
+    renderVideo();
+  }
+
+  // Stop the camera and hang up, without telling the other side (used when leaving the table).
+  function shutVideo() {
+    if (video.local) video.local.getTracks().forEach((t) => t.stop());
+    video.local = null;
+    endCall();
+  }
+
+  function endCall() {
+    const call = video.call;
+    video.call = null;
+    video.remote = null;
+    if (call) { try { call.close(); } catch (e) { /* already closed */ } }
+  }
+
+  function maybeCall() {
+    if (ui.role !== 'guest' || !video.local || !video.peerOn || video.call || !ui.net) return;
+    const call = ui.net.call(video.local);
+    if (call) wireCall(call);
+  }
+
+  function gotCall(call) {
+    endCall();
+    call.answer(video.local || undefined);
+    wireCall(call);
+  }
+
+  function wireCall(call) {
+    video.call = call;
+    call.on('stream', (stream) => {
+      if (video.call !== call) return;
+      video.remote = stream;
+      renderVideo();
+    });
+    const gone = () => {
+      if (video.call !== call) return;
+      video.call = null;
+      video.remote = null;
+      renderVideo();
+    };
+    call.on('close', gone);
+    call.on('error', gone);
+  }
+
+  function gotVideo(on) {
+    const was = video.peerOn;
+    video.peerOn = on;
+    if (!on) endCall();
+    else if (!was && !video.local && ui.screen === 'game') toast(`📷 ${oppName()} turned on video. Click “Join video” in the side panel to chat face to face.`);
+    maybeCall();
+    renderVideo();
+  }
+
+  // The connection to the other player just came up (again): any old call is dead, so start over.
+  function linked() {
+    endCall();
+    if (video.local && ui.net) ui.net.sendVideo(true);
+    renderVideo();
+  }
+
+  function toggleMic() {
+    video.mic = !video.mic;
+    if (video.local) video.local.getAudioTracks().forEach((t) => { t.enabled = video.mic; });
+    renderVideo();
+  }
+
+  function toggleCam() {
+    video.cam = !video.cam;
+    if (video.local) video.local.getVideoTracks().forEach((t) => { t.enabled = video.cam; });
+    renderVideo();
+  }
+
+  // The video panel keeps its <video> elements between updates so the picture never flickers.
+  function renderVideo() {
+    const box = $('#video');
+    if (!box || !ui.view) return;
+    const name = oppName();
+    if (!video.local && !video.remote) {
+      box.className = 'panel video-off';
+      box.replaceChildren(h('div', { class: 'video-prompt' },
+        h('span', null, video.peerOn ? `📷 ${name} has video on` : '📷 Video chat'),
+        h('button', { class: 'btn small' + (video.peerOn ? ' primary' : ''), disabled: video.starting, onclick: startVideo },
+          video.starting ? 'Starting…' : video.peerOn ? 'Join video' : 'Start video')));
+      return;
+    }
+    box.className = 'panel video-on';
+    if (!box.querySelector('.video-stage')) {
+      box.replaceChildren(
+        h('div', { class: 'video-stage' },
+          h('video', { class: 'remote', autoplay: true, playsinline: true }),
+          h('div', { class: 'video-note' }),
+          h('video', { class: 'self', autoplay: true, playsinline: true, muted: true })),
+        h('div', { class: 'video-controls' }));
+    }
+    const remoteEl = box.querySelector('video.remote');
+    const selfEl = box.querySelector('video.self');
+    const note = box.querySelector('.video-note');
+    selfEl.muted = true; // never play your own microphone back to yourself
+    if (remoteEl.srcObject !== video.remote) remoteEl.srcObject = video.remote;
+    if (selfEl.srcObject !== video.local) selfEl.srcObject = video.local;
+    selfEl.hidden = !video.local || !video.cam;
+    note.hidden = Boolean(video.remote);
+    note.textContent = video.peerOn ? `Connecting to ${name}…` : `Waiting for ${name} to turn on video…`;
+    box.querySelector('.video-controls').replaceChildren(...[
+      video.local && h('button', { class: 'btn small', onclick: toggleMic, 'aria-pressed': String(!video.mic) }, video.mic ? '🎤 Mute' : '🔇 Unmute'),
+      video.local && h('button', { class: 'btn small', onclick: toggleCam, 'aria-pressed': String(!video.cam) }, video.cam ? '📷 Camera off' : '📷 Camera on'),
+      h('button', { class: 'btn small ghost', onclick: stopVideo }, 'Leave video'),
+    ].filter(Boolean));
+  }
+
   // ---------- sounds ----------
 
   let audio = null;
@@ -1460,16 +2065,35 @@
     osc.stop(at + dur + 0.05);
   }
 
-  function whoosh(at) {
+  function noiseBuffer() {
     if (!noise) {
-      noise = audio.createBuffer(1, Math.floor(audio.sampleRate * 0.4), audio.sampleRate);
+      noise = audio.createBuffer(1, Math.floor(audio.sampleRate * 0.5), audio.sampleRate);
       const data = noise.getChannelData(0);
       for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
     }
+    return noise;
+  }
+
+  function noiseBurst(at, dur, type, freq, vol) {
     const src = audio.createBufferSource();
     const filter = audio.createBiquadFilter();
     const gain = audio.createGain();
-    src.buffer = noise;
+    src.buffer = noiseBuffer();
+    src.loop = true;
+    filter.type = type;
+    filter.frequency.value = freq;
+    gain.gain.setValueAtTime(vol, at);
+    gain.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+    src.connect(filter).connect(gain).connect(audio.destination);
+    src.start(at);
+    src.stop(at + dur + 0.02);
+  }
+
+  function whoosh(at) {
+    const src = audio.createBufferSource();
+    const filter = audio.createBiquadFilter();
+    const gain = audio.createGain();
+    src.buffer = noiseBuffer();
     filter.type = 'bandpass';
     filter.Q.value = 1.2;
     filter.frequency.setValueAtTime(500, at);
@@ -1491,6 +2115,15 @@
       else if (kind === 'turn') { tone(784, now, 0.3, 0.12); tone(1047, now + 0.13, 0.45, 0.12); }
       else if (kind === 'taunt') tone(520, now, 0.22, 0.16, 'triangle', 980);
       else if (kind === 'whoosh') whoosh(now);
+      else if (kind === 'crack') {
+        noiseBurst(now, 0.14, 'highpass', 1800, 0.55);
+        tone(110, now, 0.5, 0.35, 'sine', 45);
+        noiseBurst(now + 0.35, 0.9, 'lowpass', 380, 0.3);
+      } else if (kind === 'skitter') {
+        for (let i = 0; i < 16; i++) noiseBurst(now + i * 0.06 + Math.random() * 0.03, 0.022, 'bandpass', 3400, 0.22);
+      } else if (kind === 'pop') {
+        for (let i = 0; i < 9; i++) tone(520 + Math.random() * 380, now + i * 0.1 + Math.random() * 0.04, 0.09, 0.13, 'sine', 240);
+      }
     } catch (e) { /* no sound available */ }
   }
 
@@ -1540,6 +2173,9 @@
     const body = [
       h('p', { class: 'lede' }, gameOver ? `Final score ${Math.max(...v.totals)} to ${Math.min(...v.totals)}. ${out}` : out,
         tied ? ' You’re tied, so there’s one more hand.' : ''),
+      !gameOver && x.won != null ? h('p', { class: 'armed-note' }, x.won === me
+        ? '⚔️ You won the hand, so you get three attacks to use in the next one.'
+        : `⚔️ ${v.names[x.won]} won the hand and gets three attacks to use in the next one. Watch out!`) : null,
       h('table', { class: 'summary' },
         h('thead', null, h('tr', null, h('th', null, ''), h('th', null, 'On table'), h('th', null, 'Left in hand'), h('th', null, 'This hand'), h('th', null, 'Total'))),
         h('tbody', null, row(me, 'You'), row(o, nm(v.names[o])))),
@@ -1625,7 +2261,7 @@
     document.addEventListener('pointerdown', unlockAudio, { once: true });
     document.addEventListener('keydown', (e) => {
       if (e.key !== 'Escape') return;
-      if (ui.tauntMenu) closeTauntMenu();
+      if (ui.menu) closeMenu();
       else if (ui.modal) closeModal();
     });
     route();

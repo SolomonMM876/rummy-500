@@ -212,6 +212,40 @@ g.totals = [482, 517];
 goOut(g);
 eq([g.phase, g.winner, g.totals], ['handOver', null, [500, 500]], 'a tie means another hand');
 
+// Attacks: whoever scores more in a hand gets one of each for the next hand.
+g = game();
+goOut(g); // Sol +18, Alex −17
+eq(g.history[0].won, 0, 'higher hand score wins the hand');
+act(g, 0, { type: 'ready' });
+act(g, 1, { type: 'ready' });
+eq([g.attacks[0], g.attacks[1], g.wild], [{ smash: 1, spiders: 1, bloom: 1 }, {}, [1, 1]], 'the winner gets one of each attack; everyone has a wild one');
+ok(!act(g, 1, { type: 'attack', kind: 'spiders' }) && g.wild[1] === 0, 'the loser can still spend their wild attack');
+eq(act(g, 1, { type: 'attack', kind: 'spiders' }), 'You don’t have that attack. Win a hand to earn attacks for the next one.', 'but only once');
+ok(!act(g, 0, { type: 'attack', kind: 'spiders' }), 'use an attack, even on the other player’s turn or before drawing');
+eq([g.attacks[0].spiders, g.wild[0], g.lastAttack], [0, 1, { n: 2, by: 0, kind: 'spiders' }], 'earned attacks are spent before the wild one');
+ok(!act(g, 0, { type: 'attack', kind: 'spiders' }) && g.wild[0] === 0, 'a used-up kind falls back on the wild attack');
+ok(act(g, 0, { type: 'attack', kind: 'spiders' }), 'then that kind is gone');
+ok(!act(g, 0, { type: 'attack', kind: 'smash' }) && g.lastAttack.n === 4, 'a different earned attack still works');
+ok(act(g, 0, { type: 'attack', kind: 'nuke' }), 'unknown attacks rejected');
+eq(R.viewFor(g, 1).lastAttack, { n: 4, by: 0, kind: 'smash' }, 'the other player sees the attack in their view');
+goOut(g);
+ok(act(g, 0, { type: 'attack', kind: 'bloom' }), 'no attacks between hands');
+g.history[g.history.length - 1].won = null;
+act(g, 0, { type: 'ready' });
+act(g, 1, { type: 'ready' });
+eq(g.attacks, [{}, {}], 'a tied hand earns nobody attacks, and unused ones expire');
+delete g.wild;
+eq(R.viewFor(g, 0).wild, [1, 1], 'games saved before wild attacks get one each');
+ok(!act(g, 0, { type: 'attack', kind: 'bloom' }) && g.wild[0] === 0, 'and can spend it');
+
+// The move list starts fresh with each deal.
+g = game();
+goOut(g);
+ok(g.log.some((e) => e.text.includes('went out')), 'the finished hand’s moves are listed until the next deal');
+act(g, 0, { type: 'ready' });
+act(g, 1, { type: 'ready' });
+ok(g.log.length <= 2 && g.log[0].text.startsWith('Hand 2:'), 'a new deal clears the previous hand’s moves');
+
 // Views keep each hand private.
 g = game();
 setup(g, { hands: [['5H', '6H', '9C'], ['3C', '9S', '5D']], discard: ['2S'], stock: ['7H', '8D'] });

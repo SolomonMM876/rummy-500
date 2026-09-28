@@ -24,6 +24,13 @@
   const RANKS = [null, 'A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
   const RANK_PLURAL = [null, 'Aces', '2s', '3s', '4s', '5s', '6s', '7s', '8s', '9s', '10s', 'Jacks', 'Queens', 'Kings'];
   const SCORING = ['simplified', 'traditional', 'advanced'];
+  // Cosmetic attacks: whoever scores more in a hand gets one of each for the next hand.
+  const ATTACKS = ['smash', 'spiders', 'bloom'];
+  const ATTACK_NOTE = {
+    smash: (name) => `${name} smashed the table in half! 💥`,
+    spiders: (name) => `${name} released the spiders! 🕷️`,
+    bloom: (name) => `${name} made mushrooms sprout everywhere! 🍄`,
+  };
 
   const isJoker = (id) => id.charAt(0) === 'X';
   const rankOf = (id) => RANKS.indexOf(id.slice(0, -1));
@@ -282,6 +289,9 @@
       totals: [0, 0],
       ready: [false, false],
       winner: null,
+      attacks: [{}, {}], // attacks each player can still use this hand, by kind
+      wild: [1, 1], // one attack each to start the game, usable as any kind
+      lastAttack: null, // { n, by, kind }: n counts up so each attack plays once
       log: [],
       logSeq: 0,
       seq: 0,
@@ -295,6 +305,7 @@
 
   function dealHand(g, rng) {
     g.handNo += 1;
+    g.log = []; // the move list only covers the hand being played
     g.starter = g.starter == null ? (rng() < 0.5 ? 0 : 1) : 1 - g.starter;
     const deck = shuffle(newDeck(g.settings.jokers), rng);
     g.hands = [[], []];
@@ -309,6 +320,12 @@
     g.phase = 'play';
     g.ready = [false, false];
     note(g, `Hand ${g.handNo}: ${g.settings.handSize} cards each. ${g.names[g.starter]} goes first.`);
+    g.attacks = [{}, {}];
+    const last = g.history[g.history.length - 1];
+    if (last && last.won != null) {
+      g.attacks[last.won] = Object.fromEntries(ATTACKS.map((k) => [k, 1]));
+      note(g, `${g.names[last.won]} won the last hand and has attacks ready ⚔️`);
+    }
     beginTurn(g, g.starter);
   }
 
@@ -329,7 +346,8 @@
     const inHand = g.hands.map((hand) => hand.reduce((s, id) => s + handPoints(id, st), 0));
     const score = [table[0] - inHand[0], table[1] - inHand[1]];
     g.totals = [g.totals[0] + score[0], g.totals[1] + score[1]];
-    g.history.push({ hand: g.handNo, wentOut, table, inHand, score, totals: g.totals.slice(), left: g.hands.map((x) => x.slice()) });
+    const won = score[0] === score[1] ? null : score[0] > score[1] ? 0 : 1;
+    g.history.push({ hand: g.handNo, wentOut, won, table, inHand, score, totals: g.totals.slice(), left: g.hands.map((x) => x.slice()) });
     note(g, `Hand ${g.handNo} scores: ${g.names[0]} ${signed(score[0])}, ${g.names[1]} ${signed(score[1])}.`);
     g.phase = 'handOver';
     g.ready = [false, false];
@@ -498,13 +516,26 @@
       note(g, s.step === 'draw' ? `${g.names[seat]} put the cards back on the discard pile.` : `${g.names[seat]} took back a play.`);
     },
 
+    // Usable any time during the hand, on either player's turn. Purely visual.
+    attack(g, seat, act) {
+      if (g.phase !== 'play') return 'Attacks can only be used during a hand.';
+      if (!ATTACKS.includes(act.kind)) return 'Unknown attack.';
+      if (!g.wild) g.wild = [1, 1]; // games saved before wild attacks existed
+      const mine = g.attacks && g.attacks[seat];
+      if (mine && mine[act.kind] > 0) mine[act.kind] -= 1;
+      else if (g.wild[seat] > 0) g.wild[seat] -= 1;
+      else return 'You don’t have that attack. Win a hand to earn attacks for the next one.';
+      g.lastAttack = { n: ((g.lastAttack && g.lastAttack.n) || 0) + 1, by: seat, kind: act.kind };
+      note(g, ATTACK_NOTE[act.kind](g.names[seat]));
+    },
+
     // Both players confirm before the next hand (or a new game) is dealt.
     ready(g, seat, act, rng) {
       if (g.phase === 'play') return 'The hand is still being played.';
       g.ready[seat] = true;
       if (!(g.ready[0] && g.ready[1])) return;
       if (g.phase === 'gameOver') {
-        Object.assign(g, { gameNo: g.gameNo + 1, handNo: 0, starter: null, history: [], totals: [0, 0], winner: null });
+        Object.assign(g, { gameNo: g.gameNo + 1, handNo: 0, starter: null, history: [], totals: [0, 0], winner: null, wild: [1, 1] });
         note(g, 'New game!');
       }
       dealHand(g, rng);
@@ -548,13 +579,16 @@
       totals: g.totals,
       ready: g.ready,
       winner: g.winner,
+      attacks: g.attacks || [{}, {}],
+      wild: g.wild || [1, 1],
+      lastAttack: g.lastAttack || null,
       log: g.log.slice(-80),
       seq: g.seq,
     };
   }
 
   const api = {
-    SUITS, SUIT_SYM, SUIT_NAME, RANKS, RANK_PLURAL, SCORING,
+    SUITS, SUIT_SYM, SUIT_NAME, RANKS, RANK_PLURAL, SCORING, ATTACKS,
     isJoker, rankOf, suitOf, cardId, label, asLabel, entryLabel, eff, meldName, signed,
     newDeck, shuffle, meldOptions, layoffOptions, aceClass, tablePoints, handPoints, pointsOnTable,
     newGame, dealHand, apply, viewFor,

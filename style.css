@@ -183,6 +183,13 @@ input.num { width: 110px; }
 .back.back-hedgehog { background-color: #b98a55; background-image: radial-gradient(rgba(80, 50, 20, 0.4) 18%, transparent 21%); background-size: 8px 8px; }
 .back.back-cat { background-color: #6a4c9c; background-image: radial-gradient(rgba(255, 255, 255, 0.15) 22%, transparent 25%), radial-gradient(rgba(255, 255, 255, 0.15) 22%, transparent 25%); background-size: 12px 12px; background-position: 0 0, 6px 6px; }
 .back.back-bee { background-color: #f0b43a; background-image: repeating-linear-gradient(0deg, rgba(43, 35, 23, 0.28) 0 4px, transparent 4px 12px); }
+.back.back-morel { background-color: #8a6a45; background-image: radial-gradient(rgba(60, 38, 18, 0.45) 22%, transparent 26%); background-size: 9px 11px; }
+.back.back-chanterelle { background-color: #35613b; background-image: radial-gradient(rgba(243, 166, 50, 0.55) 16%, transparent 20%); background-size: 12px 12px; }
+.back.back-porcini { background-color: #5b3a22; background-image: radial-gradient(rgba(239, 227, 198, 0.2) 20%, transparent 24%); background-size: 10px 10px; }
+.back.back-turkeytail { background-color: #efe6d4; background-image: repeating-radial-gradient(circle at 50% 115%, #5a3b28 0 4px, #a8784e 4px 7px, #3e5877 7px 10px, #cbb89a 10px 12px, #efe6d4 12px 15px); }
+.back.back-mushcat { background-color: #2f7f7a; background-image: radial-gradient(rgba(255, 255, 255, 0.16) 20%, transparent 24%); background-size: 11px 11px; }
+.back.back-blackcat { background-color: #3a2f5c; background-image: radial-gradient(#f5d547 1px, transparent 1.6px), radial-gradient(rgba(245, 213, 71, 0.5) 0.7px, transparent 1.2px); background-size: 15px 15px, 9px 9px; background-position: 0 0, 4px 6px; }
+.back-art svg { display: block; width: 88%; height: 88%; }
 .card.sm { --cw: 34px; --ch: 48px; }
 .card.tiny { --cw: 42px; --ch: 60px; }
 .card.mine::after, .card.theirs::after {
@@ -263,8 +270,8 @@ input.num { width: 110px; }
 .status.must { background: rgba(243, 194, 79, 0.17); border-color: var(--gold); }
 .status.wait { color: var(--ink-2); font-weight: 500; }
 .status-extra { color: var(--gold); }
-.hand { display: flex; justify-content: center; align-items: flex-end; min-height: calc(var(--ch) + 36px); padding-top: 34px; }
-.hand .card { cursor: pointer; transition: transform 0.15s ease, box-shadow 0.15s ease; }
+.hand { position: relative; display: flex; justify-content: center; align-items: flex-end; min-height: calc(var(--ch) + 36px); padding-top: 34px; }
+.hand .card { cursor: grab; touch-action: none; transition: transform 0.15s ease, box-shadow 0.15s ease, translate 0.16s ease; }
 .hand .card + .card { margin-left: var(--ov, 8px); }
 .hand .card:hover { transform: translateY(-8px); }
 .hand .card.sel { transform: translateY(-24px); box-shadow: 0 0 0 3px var(--gold), 0 12px 22px rgba(0, 0, 0, 0.4); }
@@ -385,6 +392,52 @@ body.nudge .game { animation: nudge 0.5s ease; }
 .turn-pill { position: fixed; translate: -50% -115%; white-space: nowrap; font: 800 16px/1 var(--sans); color: var(--gold-ink); background: var(--gold); padding: 9px 16px; border-radius: 999px; box-shadow: 0 10px 26px rgba(0, 0, 0, 0.4); }
 #hand.pulse .card { animation: turn-pulse 0.8s ease-in-out both; animation-delay: calc(var(--i, 0) * 55ms); }
 @keyframes turn-pulse { 45% { transform: translateY(-12px); box-shadow: 0 0 0 3px rgba(243, 194, 79, 0.85), 0 12px 20px rgba(0, 0, 0, 0.35); } }
+
+/* ---------- dragging cards within your hand ---------- */
+.hand .card.placeholder { opacity: 0.25; }
+.hand .card.landing { opacity: 0; }
+.hand.dragging .card:hover { transform: none; }
+.hand.dragging .card.sel:hover { transform: translateY(-24px); }
+.drag-ghost { position: fixed; left: 0; top: 0; z-index: 90; margin: 0; pointer-events: none; cursor: grabbing; box-shadow: 0 0 0 3px rgba(243, 194, 79, 0.75), 0 18px 34px rgba(0, 0, 0, 0.45); }
+
+/* ---------- attacks ---------- */
+.btn.attack { background: #8a2a1c; border-color: #d2553f; }
+.btn.attack:hover:not(:disabled) { background: #a3321f; }
+.armed { margin-left: 6px; filter: drop-shadow(0 0 5px rgba(243, 194, 79, 0.9)); }
+.modal-body p.armed-note { color: var(--gold); font-weight: 600; }
+.attack-menu { grid-template-columns: 1fr; }
+.taunt:disabled { opacity: 0.45; cursor: default; }
+.board-half {
+  position: fixed; margin: 0; pointer-events: none;
+  background-color: var(--felt); background-image: radial-gradient(ellipse 90% 70% at 50% 38%, var(--felt-hi), var(--felt) 60%);
+  box-shadow: 0 30px 70px rgba(0, 0, 0, 0.6);
+}
+.smash-void { position: fixed; background: radial-gradient(ellipse at 50% 45%, #0c2319, #020806 75%); box-shadow: inset 0 0 80px rgba(0, 0, 0, 0.9); }
+.crack { position: fixed; overflow: visible; }
+.crack polyline { fill: none; stroke: #fff4d6; stroke-width: 3; stroke-linejoin: round; filter: drop-shadow(0 0 6px rgba(255, 240, 200, 0.9)); }
+.attack-label { position: fixed; translate: -50% -50%; max-width: min(80vw, 560px); text-align: center; font: 800 28px/1.2 var(--sans); color: #fff; text-shadow: 0 4px 18px rgba(0, 0, 0, 0.8); overflow-wrap: anywhere; }
+.spider { position: fixed; left: 0; top: 0; }
+.spider svg { display: block; width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 3px 3px rgba(0, 0, 0, 0.45)); }
+.spider .legs { transform-origin: 0px 0px; animation: legs 0.11s linear infinite alternate; }
+@keyframes legs { to { transform: scale(0.84, 1.08); } }
+.thread { position: fixed; top: 0; width: 1px; height: 0; translate: -50% 0; background: rgba(255, 255, 255, 0.65); }
+.sprout { position: fixed; display: grid; place-items: end center; line-height: 1; transform-origin: 50% 100%; }
+.sprout svg { display: block; width: 100%; height: 100%; filter: drop-shadow(0 4px 4px rgba(0, 0, 0, 0.35)); }
+
+/* ---------- card style & pick-up animation ---------- */
+.modal-sub { margin: 16px 0 2px; font: 700 12px/1 var(--sans); letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-2); }
+.modal-sub:first-child { margin-top: 4px; }
+.card.carried { position: fixed; left: 0; top: 0; margin: 0; --cw: 50px; --ch: 71px; pointer-events: none; box-shadow: 0 10px 22px rgba(0, 0, 0, 0.4); }
+.menu-note { grid-column: 1 / -1; padding: 4px 6px 2px; font-size: 13px; color: var(--gold); }
+
+/* ---------- video chat ---------- */
+.side-panels { display: flex; flex-direction: column; gap: 12px; flex: 1; min-height: 0; }
+.video-prompt { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-weight: 600; overflow-wrap: anywhere; }
+.video-stage { position: relative; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 10px; background: #04110b; }
+.video-stage video.remote { display: block; width: 100%; height: 100%; object-fit: cover; }
+.video-stage video.self { position: absolute; right: 6px; bottom: 6px; width: 32%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 6px; border: 2px solid rgba(255, 255, 255, 0.75); background: #000; transform: scaleX(-1); }
+.video-note { position: absolute; inset: 0; display: grid; place-items: center; padding: 14px; text-align: center; font-size: 13px; color: var(--ink-2); overflow-wrap: anywhere; }
+.video-controls { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 
 /* ---------- smaller screens ---------- */
 @media (max-width: 1000px) {
