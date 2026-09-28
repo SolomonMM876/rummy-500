@@ -14,7 +14,7 @@
   const PEER_PREFIX = 'sm-rummy500-';
   const HEARTBEAT_MS = 4000;
   const STALE_MS = 13000;
-  const POKE_COOLDOWN_MS = 10000;
+  const COOLDOWN = { poke: 10000, fake: 6000, taunt: 3000 }; // ms before each button works again
   // PeerJS destroys the peer after these errors, so we start a new one.
   const FATAL = new Set(['unavailable-id', 'server-error', 'socket-error', 'socket-closed', 'invalid-id', 'ssl-unavailable', 'browser-incompatible', 'invalid-key']);
   const DEFAULTS = { handSize: 7, scoring: 'traditional', jokers: false, target: 500 };
@@ -32,6 +32,36 @@
     'host-offline': 'The host’s table isn’t open right now. Waiting for them…',
     reconnecting: 'Connection lost. Reconnecting…',
   };
+  // Card backs: [id, name, emoji in the middle ('' = pattern only)]. The patterns live in style.css.
+  const BACKS = [
+    ['classic', 'Classic', ''],
+    ['amanita', 'Fly agaric', '🍄'],
+    ['forest', 'Mushroom patch', ''],
+    ['fox', 'Fox', '🦊'],
+    ['owl', 'Owl', '🦉'],
+    ['frog', 'Frog', '🐸'],
+    ['hedgehog', 'Hedgehog', '🦔'],
+    ['cat', 'Cat', '🐱'],
+    ['bee', 'Bee', '🐝'],
+  ];
+  const BACK_BY_ID = Object.fromEntries(BACKS.map((b) => [b[0], b]));
+  const BACK_IDS = new Set(Object.keys(BACK_BY_ID));
+  // Taunts: [id, emoji, text]. Both players' pages need the same ids.
+  const TAUNTS = [
+    ['nice', '😏', 'Nice try.'],
+    ['wait', '⏰', 'Any day now…'],
+    ['see', '👀', 'I know what you’re holding.'],
+    ['sleep', '😴', 'Wake me when it’s my turn.'],
+    ['fire', '🔥', 'I’m on fire!'],
+    ['please', '🙏', 'Please discard something good.'],
+    ['dont', '🤫', 'Don’t pick that up…'],
+    ['oof', '😬', 'Oof. That’s gonna cost you.'],
+    ['called', '🎯', 'Called it.'],
+    ['bye', '👋', 'Say goodbye to those points!'],
+    ['yawn', '🥱', 'Is that all you’ve got?'],
+    ['gg', '🤝', 'Good game!'],
+  ];
+  const TAUNT_BY_ID = Object.fromEntries(TAUNTS.map((t) => [t[0], t]));
 
   // ---------- helpers ----------
 
@@ -74,7 +104,8 @@
 
   const rng = () => crypto.getRandomValues(new Uint32Array(1))[0] / 4294967296;
   const clone = (o) => JSON.parse(JSON.stringify(o));
-  const cleanName = (s) => String(s || '').replace(/\s+/g, ' ').trim().slice(0, 20);
+  const cleanName = (s) => String(s || '').replace(/\s+/g, ' ').trim();
+  const myBack = () => (BACK_IDS.has(store.get('r500:back')) ? store.get('r500:back') : 'classic');
   const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
   const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
   const initial = (name) => (name || '?').trim().charAt(0).toUpperCase();
@@ -171,6 +202,7 @@
       if (!this.online) this.setOnline(true);
       if (msg.type === 'ping') conn.send({ type: 'pong' });
       else if (msg.type === 'poke') this.cb.onPoke(this.names()[1] || 'Your friend');
+      else if (msg.type === 'emote') this.cb.onEmote(msg.emote);
       else if (msg.type === 'act') {
         const err = this.act(1, msg.action);
         if (err) conn.send({ type: 'error', msg: err });
@@ -194,6 +226,7 @@
       }
       seat.token = token;
       if (this.t.lobby || !seat.name) seat.name = cleanName(msg.name) || 'Friend';
+      if (BACK_IDS.has(msg.back)) seat.back = msg.back;
       this.conn = conn;
       this.lastSeen = Date.now();
       this.online = true;
@@ -227,6 +260,9 @@
       } else if (action.type === 'lobby') {
         if (seat !== 0 || !t.game || t.game.phase !== 'gameOver') return 'You can change the settings once the game is over.';
         t.lobby = true;
+      } else if (action.type === 'back') {
+        if (!BACK_IDS.has(action.back)) return 'Unknown card back.';
+        t.players[seat].back = action.back;
       } else {
         if (!t.game || t.lobby) return 'The game hasn’t started yet.';
         const g = clone(t.game); // apply to a copy so a rejected move changes nothing
@@ -242,13 +278,14 @@
     viewFor(seat) {
       const t = this.t;
       const online = [true, this.online];
+      const backs = t.players.map((p) => p.back || 'classic');
       if (t.lobby || !t.game) {
         return {
-          phase: 'lobby', seat, code: t.code, settings: t.settings, names: t.players.map((p) => p.name), online,
+          phase: 'lobby', seat, code: t.code, settings: t.settings, names: t.players.map((p) => p.name), online, backs,
           lastGame: t.game ? { names: t.game.names, totals: t.game.totals } : null,
         };
       }
-      return { ...E.viewFor(t.game, seat), code: t.code, online };
+      return { ...E.viewFor(t.game, seat), code: t.code, online, backs };
     }
 
     broadcast() {
@@ -265,6 +302,12 @@
     poke() {
       if (!this.conn || !this.conn.open || !this.online) return false;
       this.conn.send({ type: 'poke', from: this.t.players[0].name });
+      return true;
+    }
+
+    emote(e) {
+      if (!this.conn || !this.conn.open || !this.online) return false;
+      this.conn.send({ type: 'emote', emote: e });
       return true;
     }
 
@@ -318,7 +361,8 @@
     connect() {
       if (this.stopped || !this.peer || this.peer.destroyed || this.peer.disconnected) return;
       if (this.conn) { try { this.conn.close(); } catch (e) { /* already closed */ } }
-      const conn = this.peer.connect(PEER_PREFIX + this.code, { reliable: true, serialization: 'json' });
+      // PeerJS's default binary mode splits large messages; its JSON mode silently refuses anything over ~16 KB.
+      const conn = this.peer.connect(PEER_PREFIX + this.code, { reliable: true });
       this.conn = conn;
       clearTimeout(this.openTimer);
       this.openTimer = setTimeout(() => {
@@ -330,7 +374,7 @@
       conn.on('open', () => {
         clearTimeout(this.openTimer);
         this.lastHeard = Date.now();
-        conn.send({ type: 'hello', token: this.token, name: this.name });
+        conn.send({ type: 'hello', token: this.token, name: this.name, back: myBack() });
       });
       conn.on('data', (msg) => { if (this.conn === conn) this.onData(msg); });
       const lost = () => {
@@ -359,6 +403,7 @@
       if (msg.type === 'view') this.cb.onView(msg.view);
       else if (msg.type === 'error') this.cb.onError(String(msg.msg));
       else if (msg.type === 'poke') this.cb.onPoke(cleanName(msg.from) || 'Your friend');
+      else if (msg.type === 'emote') this.cb.onEmote(msg.emote);
       else if (msg.type === 'full' || msg.type === 'replaced') {
         this.stop();
         this.cb.onStatus(msg.type);
@@ -390,6 +435,12 @@
       return true;
     }
 
+    emote(e) {
+      if (!this.conn || !this.conn.open) return false;
+      this.conn.send({ type: 'emote', emote: e });
+      return true;
+    }
+
     stop() {
       this.stopped = true;
       clearInterval(this.beat);
@@ -412,7 +463,8 @@
     order: [], // your hand's order on screen, including cards played this turn (so Undo puts them back)
     orderKey: null,
     fresh: new Set(),
-    pokeReadyAt: 0,
+    cool: { poke: 0, fake: 0, taunt: 0 }, // when each social button can be used again
+    tauntMenu: null,
     summaryKey: null,
     modal: null,
     dragId: null,
@@ -422,6 +474,7 @@
     onView: (view) => setView(view),
     onStatus: (status) => setStatus(status),
     onPoke: (from) => gotPoke(from),
+    onEmote: (e) => gotEmote(e),
     onError: (msg) => toast(msg, 'error'),
   };
 
@@ -449,6 +502,7 @@
   function leaveTable() {
     if (ui.net) ui.net.stop();
     closeModal();
+    closeTauntMenu();
     Object.assign(ui, { net: null, role: null, code: null, view: null, status: 'idle', summaryKey: null, orderKey: null, order: [] });
     ui.selected.clear();
     ui.fresh.clear();
@@ -524,7 +578,7 @@
   }
 
   function nameInput(onEnter) {
-    const input = h('input', { type: 'text', maxlength: 20, placeholder: 'Your name', value: store.get('r500:name', ''), autocomplete: 'off' });
+    const input = h('input', { type: 'text', placeholder: 'Your name', value: store.get('r500:name', ''), autocomplete: 'off' });
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') onEnter(); });
     input.addEventListener('input', () => input.classList.remove('bad'));
     return input;
@@ -547,7 +601,7 @@
       const name = takeName(input);
       if (!name) return;
       const code = randomCode();
-      saveTable({ code, created: Date.now(), lobby: true, settings: { ...DEFAULTS }, players: [{ name, token: 'host' }, { name: null, token: null }], game: null });
+      saveTable({ code, created: Date.now(), lobby: true, settings: { ...DEFAULTS }, players: [{ name, token: 'host', back: myBack() }, { name: null, token: null }], game: null });
       location.hash = code;
     };
     const input = nameInput(create);
@@ -636,6 +690,12 @@
           h('input', { id: 'invite', class: 'wide-input', readonly: true, value: inviteLink(), onfocus: (e) => e.target.select() }),
           h('button', { class: 'btn', onclick: copyInvite }, 'Copy link'))) : null,
       h('ul', { class: 'players' }, [0, 1].map((p) => playerRow(v, p))),
+      h('div', { class: 'back-row' },
+        backEl(v.backs && v.backs[v.seat], 'sm'),
+        h('div', null,
+          h('strong', null, 'Your card back: '), (BACK_BY_ID[v.backs && v.backs[v.seat]] || BACK_BY_ID.classic)[1],
+          h('div', { class: 'muted small' }, 'Your friend sees your cards with this design.')),
+        h('button', { class: 'btn small', onclick: chooseBack }, 'Change')),
       v.lastGame ? h('p', { class: 'fine' }, `Last game: ${v.lastGame.names[0]} ${v.lastGame.totals[0]}, ${v.lastGame.names[1]} ${v.lastGame.totals[1]}.`) : null,
       settingsForm(v, host),
       h('div', { class: 'lobby-start' }, host
@@ -696,6 +756,7 @@
   // ---------- the table ----------
 
   function renderGame(prev) {
+    const v = ui.view;
     if (ui.screen !== 'game') {
       ui.screen = 'game';
       mount(h('div', { class: 'game' },
@@ -720,6 +781,8 @@
     renderHand();
     renderSide();
     syncSummary();
+    const myTurn = (x) => x && x.phase === 'play' && x.turn === x.seat && x.handNo === v.handNo && x.gameNo === v.gameNo;
+    if (prev && v.step === 'draw' && myTurn(v) && !myTurn(prev)) yourTurnCue();
   }
 
   // Keep your own card order between updates: new cards go on the right and glow.
@@ -767,10 +830,7 @@
 
   function renderTopbar() {
     const v = ui.view;
-    const o = 1 - v.seat;
     const st = v.settings;
-    const wait = Math.max(0, Math.ceil((ui.pokeReadyAt - Date.now()) / 1000));
-    const online = oppOnline(v);
     $('#topbar').replaceChildren(
       brand(false),
       h('div', { class: 'tb-info' },
@@ -779,11 +839,8 @@
         h('span', null, st.jokers ? 'Jokers wild' : 'No Jokers'),
         h('span', null, `First to ${st.target}`)),
       h('div', { class: 'tb-actions' },
-        h('button', {
-          class: 'btn small', disabled: wait > 0 || !online, onclick: poke,
-          title: online ? `Nudge ${v.names[o]} with a sound and a message` : `${v.names[o]} isn’t connected`,
-        }, wait ? `Poked (${wait})` : `👉 Poke ${v.names[o]}`),
         ui.role === 'host' ? h('button', { class: 'btn ghost small', onclick: copyInvite }, 'Invite link') : null,
+        h('button', { class: 'btn ghost small', onclick: chooseBack }, 'Card back'),
         h('button', { class: 'btn ghost small', onclick: showRules }, 'Rules'),
         h('a', { class: 'btn ghost small', href: '#', title: 'Back to the start page. The game is saved.' }, 'Leave')));
   }
@@ -794,19 +851,34 @@
     const n = v.counts[o];
     const theirTurn = v.phase === 'play' && v.turn === o;
     const online = oppOnline(v);
+    const offline = online ? null : `${v.names[o]} isn’t connected`;
     const onTable = E.pointsOnTable(v.melds, v.settings)[o];
+    const wait = (kind) => Math.max(0, Math.ceil((ui.cool[kind] - Date.now()) / 1000));
     const backs = h('div', { class: 'opp-hand', 'aria-label': `${v.names[o]} has ${plural(n, 'card')}` },
-      Array.from({ length: n }, () => h('div', { class: 'card back sm' })));
+      Array.from({ length: n }, () => backEl(v.backs && v.backs[o], 'sm')));
     $('#opp').replaceChildren(
       h('div', { class: 'who' + (theirTurn ? ' active' : '') },
         h('span', { class: 'avatar opp' }, initial(v.names[o])),
-        h('div', null,
-          h('div', { class: 'who-name' }, v.names[o],
+        h('div', { class: 'who-text' },
+          h('div', { class: 'who-name' }, nm(v.names[o]),
             h('span', { class: 'dot ' + (online ? 'on' : 'off'), title: online ? 'Connected' : 'Not connected' }),
             online ? null : h('span', { class: 'muted small' }, ' offline')),
           h('div', { class: 'who-sub' }, `${plural(n, 'card')} · ${onTable} on the table this hand · ${v.totals[o]} total`)),
         theirTurn ? h('span', { class: 'badge' }, v.step === 'draw' ? 'Drawing…' : 'Playing…') : null),
-      backs);
+      backs,
+      h('div', { class: 'social' },
+        h('button', {
+          class: 'btn small', disabled: Boolean(offline) || wait('poke') > 0, onclick: poke,
+          title: offline || 'Nudge them with a sound and a message',
+        }, wait('poke') ? `Poked (${wait('poke')})` : '👉 Poke'),
+        h('button', {
+          class: 'btn small', disabled: Boolean(offline) || v.phase !== 'play' || !v.discard.length || wait('fake') > 0, onclick: doFake,
+          title: offline || 'Reach for the discard pile, then put it all back at the last second',
+        }, '✋ Fake grab'),
+        h('button', {
+          class: 'btn small', id: 'taunt-btn', disabled: Boolean(offline) || wait('taunt') > 0, onclick: toggleTauntMenu,
+          title: offline || 'Send a taunt', 'aria-haspopup': 'menu', 'aria-expanded': String(Boolean(ui.tauntMenu)),
+        }, '😏 Taunt')));
     fitRow(backs, 4);
   }
 
@@ -821,7 +893,7 @@
       'aria-label': empty ? 'Draw pile is empty' : `Draw pile, ${plural(v.stockCount, 'card')}`,
     }, empty
       ? h('div', { class: 'card empty-slot' }, v.discard.length >= 2 ? 'Empty: click to shuffle the discards' : 'Empty')
-      : h('div', { class: 'card back' }));
+      : backEl(v.backs && v.backs[v.seat]));
     const disc = h('div', { class: 'discard' + (canDraw ? ' can' : '') }, v.discard.map((id, i) => {
       const above = v.discard.length - 1 - i;
       const el = cardEl(id, { title: canDraw ? (above ? `Take the ${E.label(id)} and the ${plural(above, 'card')} above it` : `Take the ${E.label(id)}`) : E.label(id) });
@@ -848,7 +920,7 @@
     const canLay = v.phase === 'play' && v.turn === v.seat && v.step === 'play' && ui.selected.size > 0;
     const head = h('div', { class: 'table-head' },
       h('span', { class: 'pile-label' }, 'Table'),
-      h('span', { class: 'legend' }, h('i', { class: 'sw' }), 'yours', h('i', { class: 'sw opp' }), `${v.names[o]}’s`),
+      h('span', { class: 'legend' }, h('i', { class: 'sw' }), 'yours', h('i', { class: 'sw opp' }), h('span', null, nm(v.names[o]), '’s')),
       canLay && v.melds.length ? h('span', { class: 'hint-inline' }, 'click a meld to lay the selected cards off on it') : null);
     const body = v.melds.length
       ? h('div', { class: 'meld-grid' }, v.melds.map((m) => h('div', {
@@ -903,10 +975,11 @@
     const myTurn = v.phase === 'play' && v.turn === v.seat;
     const inHand = new Set(v.hand);
     const row = $('#hand');
-    row.replaceChildren(...ui.order.filter((id) => inHand.has(id)).map((id) => {
+    row.replaceChildren(...ui.order.filter((id) => inHand.has(id)).map((id, k) => {
       const must = myTurn && v.ti.mustPlay === id;
       const keep = myTurn && v.step === 'play' && v.ti.topOnly === id;
       const el = cardEl(id, { cls: [ui.selected.has(id) && 'sel', ui.fresh.has(id) && 'fresh', must && 'must'].filter(Boolean).join(' ') });
+      el.style.setProperty('--i', k); // staggers the your-turn wave
       el.draggable = true;
       el.tabIndex = 0;
       el.setAttribute('role', 'button');
@@ -966,7 +1039,7 @@
       h('section', { class: 'panel' },
         h('h3', null, 'Scores', h('span', { class: 'muted' }, ` · first to ${v.settings.target}`)),
         h('table', { class: 'scores' },
-          h('thead', null, h('tr', null, h('th', null, 'Hand'), h('th', null, 'You'), h('th', { title: v.names[o] }, v.names[o]))),
+          h('thead', null, h('tr', null, h('th', null, 'Hand'), h('th', null, 'You'), h('th', null, nm(v.names[o])))),
           h('tbody', null, v.history.length
             ? v.history.map((x) => h('tr', null, h('td', null, x.hand), cell(x.score[me]), cell(x.score[o])))
             : h('tr', null, h('td', { colspan: 3, class: 'muted' }, 'Each hand’s score is added here when it ends.'))),
@@ -1132,31 +1205,240 @@
     return bits.join(' · ');
   }
 
-  // ---------- poke ----------
+  // ---------- poke, taunts, fake grabs, card backs & the turn cue ----------
+
+  const fx = () => $('#fx');
+  const calm = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // A player's name in a tight spot: cut short with "…", full name on hover.
+  const nm = (name) => h('span', { class: 'nm', title: name }, name);
+
+  function backEl(design, cls) {
+    const b = BACK_BY_ID[design] || BACK_BY_ID.classic;
+    return h('div', { class: `card back back-${b[0]}${cls ? ' ' + cls : ''}` },
+      b[2] ? h('span', { class: 'back-art', 'aria-hidden': 'true' }, b[2]) : null);
+  }
+
+  function chooseBack() {
+    const v = ui.view;
+    const current = v && v.backs ? v.backs[v.seat] : myBack();
+    openModal({
+      title: 'Choose your card back',
+      body: [
+        h('p', null, 'Your friend sees your hand with this design, and it’s on the draw pile on your screen.'),
+        h('div', { class: 'back-grid' }, BACKS.map(([id, name]) => h('button', {
+          type: 'button', class: 'back-choice' + (id === current ? ' on' : ''), 'aria-pressed': String(id === current),
+          onclick: () => {
+            store.set('r500:back', id);
+            closeModal();
+            send({ type: 'back', back: id });
+          },
+        }, backEl(id), h('span', null, name)))),
+      ],
+      actions: [h('button', { class: 'btn ghost', onclick: closeModal }, 'Cancel')],
+    });
+  }
+
+  function startCooldown(kind) {
+    ui.cool[kind] = Date.now() + COOLDOWN[kind];
+    renderOpp();
+    const tick = setInterval(() => {
+      if (ui.screen === 'game' && ui.view) renderOpp();
+      if (Date.now() >= ui.cool[kind]) clearInterval(tick);
+    }, 1000);
+  }
 
   function poke() {
-    const v = ui.view;
-    const name = v.names[1 - v.seat];
+    const name = ui.view.names[1 - ui.view.seat];
     if (!ui.net.poke()) { toast(`${name} isn’t connected right now.`, 'error'); return; }
-    ui.pokeReadyAt = Date.now() + POKE_COOLDOWN_MS;
     toast(`You poked ${name}.`);
-    renderTopbar();
-    const tick = setInterval(() => {
-      if (ui.screen === 'game' && ui.view) renderTopbar();
-      if (Date.now() >= ui.pokeReadyAt) clearInterval(tick);
-    }, 1000);
+    startCooldown('poke');
   }
 
   function gotPoke(from) {
     toast(`👉 ${from} poked you!`, 'poke');
-    chime();
+    sfx('poke');
     document.body.classList.remove('nudge');
     void document.body.offsetWidth; // restart the shake animation
     document.body.classList.add('nudge');
     if (!document.hasFocus()) flashTitle(`👉 ${from} poked you`);
   }
 
+  function sendEmote(e) {
+    if (ui.net && ui.net.emote(e)) return true;
+    toast(`${ui.view.names[1 - ui.view.seat]} isn’t connected right now.`, 'error');
+    return false;
+  }
+
+  function gotEmote(e) {
+    if (!e || typeof e !== 'object' || ui.screen !== 'game' || !ui.view) return;
+    if (e.kind === 'taunt' && Object.prototype.hasOwnProperty.call(TAUNT_BY_ID, e.id)) showTaunt(e.id, 'opp');
+    else if (e.kind === 'fake' && ui.view.phase === 'play') playFake(e.index, true);
+  }
+
+  function doTaunt(id) {
+    closeTauntMenu();
+    if (!sendEmote({ kind: 'taunt', id })) return;
+    startCooldown('taunt');
+    showTaunt(id, 'me');
+  }
+
+  function doFake() {
+    const v = ui.view;
+    if (v.phase !== 'play' || !v.discard.length) return;
+    const index = Math.floor(rng() * v.discard.length);
+    if (!sendEmote({ kind: 'fake', index })) return;
+    startCooldown('fake');
+    playFake(index, false);
+  }
+
+  function toggleTauntMenu(e) {
+    if (ui.tauntMenu) { closeTauntMenu(); return; }
+    const r = e.currentTarget.getBoundingClientRect();
+    const width = Math.min(440, innerWidth - 16);
+    const menu = h('div', { class: 'taunt-menu', role: 'menu', 'aria-label': 'Taunts' },
+      TAUNTS.map(([id, emoji, text]) => h('button', { type: 'button', class: 'taunt', role: 'menuitem', onclick: () => doTaunt(id) },
+        h('span', { class: 'taunt-emoji', 'aria-hidden': 'true' }, emoji), h('span', null, text))));
+    Object.assign(menu.style, {
+      top: `${r.bottom + 8}px`,
+      left: `${Math.max(8, Math.min(r.right - width, innerWidth - width - 8))}px`,
+      width: `${width}px`,
+    });
+    document.body.append(menu);
+    ui.tauntMenu = menu;
+    document.addEventListener('pointerdown', tauntOutside, true);
+    renderOpp();
+    menu.querySelector('button').focus();
+  }
+
+  function tauntOutside(e) {
+    if (!ui.tauntMenu || ui.tauntMenu.contains(e.target) || (e.target.closest && e.target.closest('#taunt-btn'))) return;
+    closeTauntMenu();
+  }
+
+  function closeTauntMenu() {
+    if (!ui.tauntMenu) return;
+    ui.tauntMenu.remove();
+    ui.tauntMenu = null;
+    document.removeEventListener('pointerdown', tauntOutside, true);
+    if (ui.screen === 'game' && ui.view) renderOpp();
+  }
+
+  // A speech bubble by the opponent's avatar, or above your status line for your own taunts.
+  function showTaunt(id, who) {
+    const [, emoji, text] = TAUNT_BY_ID[id];
+    const anchor = who === 'opp' ? $('#opp .avatar') : $('#status');
+    if (!anchor) return;
+    const r = anchor.getBoundingClientRect();
+    const old = $(`#fx .bubble.${who}`);
+    if (old) old.remove();
+    const bubble = h('div', { class: 'bubble ' + who, role: 'status' },
+      h('span', { class: 'bubble-emoji', 'aria-hidden': 'true' }, emoji), h('span', null, text));
+    Object.assign(bubble.style, who === 'opp'
+      ? { left: `${Math.max(8, r.left - 4)}px`, top: `${r.bottom + 12}px` }
+      : { left: `${Math.max(8, r.left + 16)}px`, top: `${r.top - 12}px` });
+    fx().append(bubble);
+    burst(emoji, r.left + (who === 'opp' ? r.width / 2 : 60), who === 'opp' ? r.top + r.height / 2 : r.top);
+    sfx('taunt');
+    setTimeout(() => {
+      bubble.classList.add('out');
+      setTimeout(() => bubble.remove(), 350);
+    }, 4000);
+  }
+
+  function burst(emoji, x, y) {
+    if (calm()) return;
+    for (let i = 0; i < 7; i++) {
+      const el = h('span', { class: 'burst', 'aria-hidden': 'true' }, emoji);
+      Object.assign(el.style, { left: `${x}px`, top: `${y}px` });
+      fx().append(el);
+      const dx = (rng() - 0.5) * 150;
+      const dy = 60 + rng() * 90;
+      el.animate([
+        { transform: 'translate(0, 0) scale(0.4)', opacity: 0 },
+        { transform: `translate(${dx * 0.3}px, ${-dy * 0.3}px) scale(1.1)`, opacity: 1, offset: 0.25 },
+        { transform: `translate(${dx}px, ${-dy}px) scale(0.9)`, opacity: 0 },
+      ], { duration: 1100 + rng() * 500, delay: i * 45, easing: 'cubic-bezier(.2,.7,.3,1)', fill: 'backwards' }).onfinish = () => el.remove();
+    }
+  }
+
+  // A hand reaches into the discard pile, lifts the cards, and puts them back at the last second.
+  // The opponent's hand comes from the top of the screen; yours from the bottom.
+  function playFake(index, fromOpp) {
+    const cards = [...document.querySelectorAll('.discard .card')];
+    if (!cards.length) return;
+    const i = Number.isInteger(index) && index >= 0 && index < cards.length ? index : cards.length - 1;
+    const r = cards[i].getBoundingClientRect();
+    const next = cards[i + 1];
+    const visible = next ? next.getBoundingClientRect().left - r.left : r.width;
+    const x = r.left + Math.max(14, visible / 2);
+    const y = r.top + r.height * 0.45;
+    const lifted = cards.slice(i);
+    const T = 2400;
+    const later = (frac, f) => setTimeout(f, T * frac);
+    later(0.48, () => lifted.forEach((c) => c.classList.add('fake-lift')));
+    later(0.78, () => {
+      lifted.forEach((c) => c.classList.remove('fake-lift'));
+      sfx('whoosh');
+      psych(x, r.top);
+    });
+    if (calm()) return;
+    const hand = h('div', { class: 'fake-hand', 'aria-hidden': 'true' }, h('span', { class: fromOpp ? 'down' : 'up' }, '✋'));
+    fx().append(hand);
+    const fromX = x + 160;
+    const fromY = fromOpp ? -90 : innerHeight + 90;
+    const at = (px, py, s) => `translate(${px}px, ${py}px) scale(${s})`;
+    hand.animate([
+      { transform: at(fromX, fromY, 1), opacity: 0 },
+      { transform: at(x, y, 1), opacity: 1, offset: 0.4 },
+      { transform: at(x, y, 0.82), opacity: 1, offset: 0.48 },
+      { transform: at(x, y - 20, 0.82), opacity: 1, offset: 0.7 },
+      { transform: at(x, y, 0.9), opacity: 1, offset: 0.78 },
+      { transform: at(fromX, fromY, 1), opacity: 0 },
+    ], { duration: T, easing: 'ease-in-out' }).onfinish = () => hand.remove();
+  }
+
+  function psych(x, y) {
+    const el = h('div', { class: 'psych', 'aria-hidden': 'true' }, 'Just kidding! 😜');
+    Object.assign(el.style, { left: `${x}px`, top: `${y - 8}px` });
+    fx().append(el);
+    el.animate([
+      { transform: 'translateY(6px) scale(0.8)', opacity: 0 },
+      { transform: 'translateY(0) scale(1)', opacity: 1, offset: 0.15 },
+      { transform: 'translateY(-12px)', opacity: 1, offset: 0.8 },
+      { transform: 'translateY(-18px)', opacity: 0 },
+    ], { duration: 1700, easing: 'ease-out' }).onfinish = () => el.remove();
+  }
+
+  // Chime, pop-up and a wave across your cards when the turn comes to you.
+  function yourTurnCue() {
+    sfx('turn');
+    const hand = $('#hand');
+    if (hand && !calm()) {
+      hand.classList.remove('pulse');
+      void hand.offsetWidth;
+      hand.classList.add('pulse');
+      setTimeout(() => hand.classList.remove('pulse'), 900 + 55 * hand.children.length);
+    }
+    const status = $('#status');
+    if (!status) return;
+    const r = status.getBoundingClientRect();
+    const pill = h('div', { class: 'turn-pill', 'aria-hidden': 'true' }, 'Your turn!');
+    Object.assign(pill.style, { left: `${r.left + r.width / 2}px`, top: `${r.top}px` });
+    fx().append(pill);
+    pill.animate([
+      { transform: 'scale(0.6)', opacity: 0 },
+      { transform: 'scale(1.08)', opacity: 1, offset: 0.12 },
+      { transform: 'scale(1)', opacity: 1, offset: 0.2 },
+      { transform: 'scale(1)', opacity: 1, offset: 0.85 },
+      { transform: 'scale(0.96)', opacity: 0 },
+    ], { duration: 2000, easing: 'ease-out' }).onfinish = () => pill.remove();
+  }
+
+  // ---------- sounds ----------
+
   let audio = null;
+  let noise = null;
   function unlockAudio() {
     try {
       audio = audio || new (window.AudioContext || window.webkitAudioContext)();
@@ -1164,23 +1446,51 @@
     } catch (e) { /* no sound available */ }
   }
 
-  function chime() {
+  function tone(freq, at, dur, vol, type = 'sine', toFreq = 0) {
+    const osc = audio.createOscillator();
+    const gain = audio.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, at);
+    if (toFreq) osc.frequency.exponentialRampToValueAtTime(toFreq, at + dur * 0.6);
+    gain.gain.setValueAtTime(0.0001, at);
+    gain.gain.exponentialRampToValueAtTime(vol, at + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+    osc.connect(gain).connect(audio.destination);
+    osc.start(at);
+    osc.stop(at + dur + 0.05);
+  }
+
+  function whoosh(at) {
+    if (!noise) {
+      noise = audio.createBuffer(1, Math.floor(audio.sampleRate * 0.4), audio.sampleRate);
+      const data = noise.getChannelData(0);
+      for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    }
+    const src = audio.createBufferSource();
+    const filter = audio.createBiquadFilter();
+    const gain = audio.createGain();
+    src.buffer = noise;
+    filter.type = 'bandpass';
+    filter.Q.value = 1.2;
+    filter.frequency.setValueAtTime(500, at);
+    filter.frequency.exponentialRampToValueAtTime(2600, at + 0.3);
+    gain.gain.setValueAtTime(0.0001, at);
+    gain.gain.exponentialRampToValueAtTime(0.35, at + 0.06);
+    gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.35);
+    src.connect(filter).connect(gain).connect(audio.destination);
+    src.start(at);
+    src.stop(at + 0.4);
+  }
+
+  function sfx(kind) {
     try {
       unlockAudio();
       if (!audio) return;
       const now = audio.currentTime;
-      [[880, 0], [1320, 0.16]].forEach(([freq, at]) => {
-        const osc = audio.createOscillator();
-        const gain = audio.createGain();
-        osc.type = 'sine';
-        osc.frequency.value = freq;
-        gain.gain.setValueAtTime(0.0001, now + at);
-        gain.gain.exponentialRampToValueAtTime(0.3, now + at + 0.02);
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + at + 0.35);
-        osc.connect(gain).connect(audio.destination);
-        osc.start(now + at);
-        osc.stop(now + at + 0.4);
-      });
+      if (kind === 'poke') { tone(880, now, 0.35, 0.3); tone(1320, now + 0.16, 0.35, 0.3); }
+      else if (kind === 'turn') { tone(784, now, 0.3, 0.12); tone(1047, now + 0.13, 0.45, 0.12); }
+      else if (kind === 'taunt') tone(520, now, 0.22, 0.16, 'triangle', 980);
+      else if (kind === 'whoosh') whoosh(now);
     } catch (e) { /* no sound available */ }
   }
 
@@ -1232,7 +1542,7 @@
         tied ? ' You’re tied, so there’s one more hand.' : ''),
       h('table', { class: 'summary' },
         h('thead', null, h('tr', null, h('th', null, ''), h('th', null, 'On table'), h('th', null, 'Left in hand'), h('th', null, 'This hand'), h('th', null, 'Total'))),
-        h('tbody', null, row(me, 'You'), row(o, v.names[o]))),
+        h('tbody', null, row(me, 'You'), row(o, nm(v.names[o])))),
       [me, o].filter((p) => x.left[p].length).map((p) => h('div', { class: 'left-hand' },
         h('div', { class: 'muted small' }, p === me ? 'Left in your hand:' : `Left in ${v.names[p]}’s hand:`),
         h('div', { class: 'meld-cards' }, x.left[p].map((id) => cardEl(id, { cls: 'tiny' }))))),
@@ -1313,7 +1623,11 @@
     window.addEventListener('hashchange', route);
     window.addEventListener('focus', stopTitleFlash);
     document.addEventListener('pointerdown', unlockAudio, { once: true });
-    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && ui.modal) closeModal(); });
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') return;
+      if (ui.tauntMenu) closeTauntMenu();
+      else if (ui.modal) closeModal();
+    });
     route();
   }
 
