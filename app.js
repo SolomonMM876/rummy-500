@@ -53,7 +53,7 @@
   const BACK_BY_ID = Object.fromEntries(BACKS.map((b) => [b.id, b]));
   const BACK_IDS = new Set(Object.keys(BACK_BY_ID));
   // How your draws look to both players: nothing, or a hand or foot that swoops in and carries the card off.
-  const GRAB_STYLES = { none: { label: 'Nothing' }, hand: { label: '✋ Hand', emoji: '✋' }, foot: { label: '🦶 Foot', emoji: '🦶' } };
+  const GRAB_STYLES = { none: { label: 'Nothing' }, hand: { label: '✋ Hand', emoji: '✋', ms: 1300 }, foot: { label: '🦶 Foot', emoji: '🦶', ms: 2600 } };
   const isGrab = (g) => Object.prototype.hasOwnProperty.call(GRAB_STYLES, g);
   // Hand-drawn art for card backs (and the mushroom bloom attack), on a 40×40 grid.
   const ART = {
@@ -1571,19 +1571,21 @@
     const at = (px, py, s = 1) => `translate(${px}px, ${py}px) scale(${s})`;
     const cw = 50;
     const ch = 71;
-    const T = 1300;
+    const T = GRAB_STYLES[style].ms; // the foot takes its time
     limb.animate([
       { transform: at(sx, sy), opacity: 0 },
-      { transform: at(x, y), opacity: 1, offset: 0.36 },
-      { transform: at(x, y, 0.85), opacity: 1, offset: 0.46 },
-      { transform: at(tx, ty, 0.85), opacity: 1, offset: 0.86 },
+      { transform: at(x, y), opacity: 1, offset: 0.32 },
+      { transform: at(x, y, 0.85), opacity: 1, offset: 0.42 },
+      { transform: at(x, y - 6, 0.85), opacity: 1, offset: 0.52 },
+      { transform: at(tx, ty, 0.85), opacity: 1, offset: 0.88 },
       { transform: at(tx, sy), opacity: 0 },
     ], { duration: T, easing: 'ease-in-out' }).onfinish = () => limb.remove();
     card.animate([
       { transform: at(x - cw / 2, y + hold - ch / 2), opacity: 0 },
-      { transform: at(x - cw / 2, y + hold - ch / 2), opacity: 0, offset: 0.44 },
-      { transform: at(x - cw / 2, y + hold - ch / 2), opacity: 1, offset: 0.48 },
-      { transform: at(tx - cw / 2, ty + hold - ch / 2), opacity: 1, offset: 0.86 },
+      { transform: at(x - cw / 2, y + hold - ch / 2), opacity: 0, offset: 0.4 },
+      { transform: at(x - cw / 2, y + hold - ch / 2), opacity: 1, offset: 0.44 },
+      { transform: at(x - cw / 2, y - 6 + hold - ch / 2), opacity: 1, offset: 0.52 },
+      { transform: at(tx - cw / 2, ty + hold - ch / 2), opacity: 1, offset: 0.88 },
       { transform: at(tx - cw / 2, ty + hold - ch / 2, 0.6), opacity: 0 },
     ], { duration: T, easing: 'ease-in-out' }).onfinish = () => card.remove();
   }
@@ -2009,6 +2011,7 @@
     const name = oppName();
     if (!video.local && !video.remote) {
       box.className = 'panel video-off';
+      setVideoWidth(null);
       box.replaceChildren(h('div', { class: 'video-prompt' },
         h('span', null, video.peerOn ? `📷 ${name} has video on` : '📷 Video chat'),
         h('button', { class: 'btn small' + (video.peerOn ? ' primary' : ''), disabled: video.starting, onclick: startVideo },
@@ -2021,8 +2024,15 @@
         h('div', { class: 'video-stage' },
           h('video', { class: 'remote', autoplay: true, playsinline: true }),
           h('div', { class: 'video-note' }),
-          h('video', { class: 'self', autoplay: true, playsinline: true, muted: true })),
+          h('video', { class: 'self', autoplay: true, playsinline: true, muted: true }),
+          h('div', {
+            class: 'video-resize', role: 'separator', 'aria-label': 'Resize video',
+            title: 'Drag to resize the video · double-click to reset',
+            onpointerdown: startVideoResize,
+            ondblclick: () => { store.del('r500:videoWidth'); setVideoWidth(null); },
+          })),
         h('div', { class: 'video-controls' }));
+      setVideoWidth(store.get('r500:videoWidth'));
     }
     const remoteEl = box.querySelector('video.remote');
     const selfEl = box.querySelector('video.self');
@@ -2038,6 +2048,37 @@
       video.local && h('button', { class: 'btn small', onclick: toggleCam, 'aria-pressed': String(!video.cam) }, video.cam ? '📷 Camera off' : '📷 Camera on'),
       h('button', { class: 'btn small ghost', onclick: stopVideo }, 'Leave video'),
     ].filter(Boolean));
+  }
+
+  // The grip sits on the video's bottom-left corner: drag out to enlarge it over the table, in to shrink it.
+  function startVideoResize(e) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const box = $('#video');
+    const startW = box.getBoundingClientRect().width;
+    const x0 = e.clientX;
+    const y0 = e.clientY;
+    const move = (ev) => {
+      const byX = startW + (x0 - ev.clientX);
+      const byY = startW + ((ev.clientY - y0) * 16) / 9; // the picture keeps its 16:9 shape
+      setVideoWidth(Math.abs(byX - startW) >= Math.abs(byY - startW) ? byX : byY);
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+      store.set('r500:videoWidth', Math.round(box.getBoundingClientRect().width));
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+  }
+
+  function setVideoWidth(w) {
+    const box = $('#video');
+    if (!box) return;
+    if (!w) box.style.removeProperty('--vw');
+    else box.style.setProperty('--vw', `${Math.round(Math.min(innerWidth - 40, Math.max(200, w)))}px`);
   }
 
   // ---------- sounds ----------

@@ -362,7 +362,7 @@ body.nudge .game { animation: nudge 0.5s ease; }
 
 /* ---------- poke, taunts, fake grab, your-turn cue ---------- */
 .opp-strip { flex-wrap: wrap; }
-.social { margin-left: auto; display: flex; flex: none; gap: 6px; }
+.social { position: relative; z-index: 7; margin-left: auto; display: flex; flex: none; gap: 6px; } /* stays clickable over an enlarged video */
 #fx { position: fixed; inset: 0; z-index: 70; pointer-events: none; }
 .bubble {
   position: fixed; max-width: min(340px, calc(100vw - 24px)); display: flex; align-items: center; gap: 8px;
@@ -438,12 +438,21 @@ body.nudge .game { animation: nudge 0.5s ease; }
 .video-stage video.self { position: absolute; right: 6px; bottom: 6px; width: 32%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 6px; border: 2px solid rgba(255, 255, 255, 0.75); background: #000; transform: scaleX(-1); }
 .video-note { position: absolute; inset: 0; display: grid; place-items: center; padding: 14px; text-align: center; font-size: 13px; color: var(--ink-2); overflow-wrap: anywhere; }
 .video-controls { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+/* Resizable: a width wider than the side panel spills left over the table. */
+#video.video-on { position: relative; z-index: 6; width: var(--vw, 100%); margin-left: calc(100% - var(--vw, 100%)); box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35); }
+.video-resize {
+  position: absolute; left: 0; bottom: 0; z-index: 2; width: 28px; height: 28px; cursor: nesw-resize; touch-action: none; opacity: 0.75;
+  background: linear-gradient(45deg, rgba(255, 255, 255, 0.9) 0 7%, transparent 7% 17%, rgba(255, 255, 255, 0.9) 17% 24%, transparent 24% 34%, rgba(255, 255, 255, 0.9) 34% 41%, transparent 41%);
+  filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.9));
+}
+.video-resize:hover { opacity: 1; }
 
 /* ---------- smaller screens ---------- */
 @media (max-width: 1000px) {
   .game { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto auto; height: auto; min-height: 100vh; }
   .side { grid-row: 4; grid-column: 1; border-left: 0; border-top: 1px solid var(--line); }
   .log ol { max-height: 240px; }
+  #video.video-on { width: min(var(--vw, 100%), 100%); margin-left: auto; }
   .tb-info { display: none; }
 }
 @media (max-width: 640px) {
