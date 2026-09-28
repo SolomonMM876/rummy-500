@@ -189,6 +189,8 @@ input.num { width: 110px; }
 .back.back-turkeytail { background-color: #efe6d4; background-image: repeating-radial-gradient(circle at 50% 115%, #5a3b28 0 4px, #a8784e 4px 7px, #3e5877 7px 10px, #cbb89a 10px 12px, #efe6d4 12px 15px); }
 .back.back-mushcat { background-color: #2f7f7a; background-image: radial-gradient(rgba(255, 255, 255, 0.16) 20%, transparent 24%); background-size: 11px 11px; }
 .back.back-blackcat { background-color: #3a2f5c; background-image: radial-gradient(#f5d547 1px, transparent 1.6px), radial-gradient(rgba(245, 213, 71, 0.5) 0.7px, transparent 1.2px); background-size: 15px 15px, 9px 9px; background-position: 0 0, 4px 6px; }
+.back.back-whitecat { background-color: #5b7fb0; background-image: radial-gradient(rgba(255, 255, 255, 0.2) 20%, transparent 24%); background-size: 11px 11px; }
+.back-whitecat .back-art { background: radial-gradient(circle, #1f2d4d 0 58%, rgba(31, 45, 77, 0) 62%); } /* a dark disc so the white cat shows */
 .back-art svg { display: block; width: 88%; height: 88%; }
 .card.sm { --cw: 34px; --ch: 48px; }
 .card.tiny { --cw: 42px; --ch: 60px; }
@@ -245,7 +247,7 @@ input.num { width: 110px; }
 .discard.can .card:hover { box-shadow: 0 0 0 3px var(--gold), 0 10px 18px rgba(0, 0, 0, 0.4); }
 .discard.can .card:hover ~ .card { box-shadow: 0 0 0 2px rgba(243, 194, 79, 0.55), 0 10px 18px rgba(0, 0, 0, 0.35); }
 
-.table { flex: 1; min-height: 150px; overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 10px 14px 14px; }
+.table { flex: 0 1 auto; min-height: 150px; overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 10px 14px 14px; }
 .table-head { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; }
 .legend { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-2); }
 .legend .sw { display: inline-block; width: 14px; height: 4px; border-radius: 2px; background: var(--me); margin-left: 6px; }
@@ -260,7 +262,7 @@ input.num { width: 110px; }
 .meld.can { cursor: pointer; border-color: rgba(243, 194, 79, 0.35); background: rgba(243, 194, 79, 0.06); }
 .meld.can:hover { border-color: var(--gold); background: rgba(243, 194, 79, 0.15); }
 
-.my-area { display: flex; flex-direction: column; gap: 6px; }
+.my-area { display: flex; flex-direction: column; gap: 6px; margin-top: auto; }
 .status {
   display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap;
   min-height: 42px; padding: 8px 16px; border-radius: 999px; text-align: center;
@@ -449,11 +451,14 @@ body.nudge .game { animation: nudge 0.5s ease; }
 
 /* ---------- smaller screens ---------- */
 @media (max-width: 1000px) {
+  .game { grid-template-columns: minmax(0, 1fr) 250px; }
+  .tb-info { display: none; }
+}
+@media (max-width: 760px) {
   .game { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto auto; height: auto; min-height: 100vh; }
   .side { grid-row: 4; grid-column: 1; border-left: 0; border-top: 1px solid var(--line); }
   .log ol { max-height: 240px; }
-  #video.video-on { width: min(var(--vw, 100%), 100%); margin-left: auto; }
-  .tb-info { display: none; }
+  #video.video-on { width: min(var(--vw, 100%), 100%, 480px); margin: 0 auto; }
 }
 @media (max-width: 640px) {
   :root { --cw: 58px; --ch: 82px; }
