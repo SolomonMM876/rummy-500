@@ -857,12 +857,16 @@
         h('header', { class: 'topbar', id: 'topbar' }),
         h('div', { id: 'banner', class: 'banner', hidden: true }),
         h('section', { class: 'board' },
-          h('div', { class: 'opp-strip', id: 'opp' }),
+          h('div', { class: 'opp-row' },
+            h('div', { id: 'opp-video', class: 'video-tile', hidden: true }),
+            h('div', { class: 'opp-strip', id: 'opp' })),
           h('div', { class: 'piles', id: 'piles' }),
           h('div', { class: 'table', id: 'melds' }),
           h('div', { class: 'my-area' },
             h('div', { class: 'status', id: 'status', 'aria-live': 'polite' }),
-            h('div', { class: 'hand', id: 'hand' }),
+            h('div', { class: 'hand-row' },
+              h('div', { id: 'my-video', class: 'video-tile my-tile', hidden: true }),
+              h('div', { class: 'hand', id: 'hand' })),
             h('div', { class: 'controls', id: 'controls' }))),
         h('aside', { class: 'side', id: 'side' },
           h('div', {
@@ -873,6 +877,7 @@
           h('section', { id: 'video', class: 'panel' }),
           h('div', { id: 'side-panels', class: 'side-panels' }))));
       applySideWidth(savedSideWidth());
+      applyTileWidth(store.get('r500:tileWidth'));
     }
     const pilesBefore = pileRects(); // where the cards were, for the pick-up animation
     const handBefore = Object.fromEntries([...document.querySelectorAll('#hand .card')].map((c) => [c.dataset.id, c.getBoundingClientRect()]));
@@ -2413,11 +2418,13 @@
     renderVideo();
   }
 
-  // The video panel keeps its <video> elements between updates so the picture never flickers.
+  // Videos sit next to each player's hand: theirs by their cards at the top, yours by your hand.
+  // The side panel just holds the controls.
   function renderVideo() {
     const box = $('#video');
     if (!box || !ui.view) return;
     const name = oppName();
+    renderTiles();
     if (!video.local && !video.remote) {
       box.className = 'panel video-off';
       box.replaceChildren(h('div', { class: 'video-prompt' },
@@ -2427,34 +2434,87 @@
       return;
     }
     box.className = 'panel video-on';
-    if (!box.querySelector('.video-stage')) {
-      box.replaceChildren(
-        h('div', { class: 'video-stage' },
-          h('video', { class: 'remote', autoplay: true, playsinline: true }),
-          h('div', { class: 'video-note' }),
-          h('video', { class: 'self', autoplay: true, playsinline: true, muted: true }),
-          h('div', {
-            class: 'video-resize', role: 'separator', 'aria-label': 'Resize video',
-            title: 'Drag to resize the video · double-click to reset',
-            onpointerdown: (e) => startSideResize(e, true),
-            ondblclick: resetSideWidth,
-          })),
-        h('div', { class: 'video-controls' }));
+    box.replaceChildren(
+      h('div', { class: 'video-prompt' }, h('span', null,
+        video.remote ? '📷 Video is on, next to your hands' : video.peerOn ? `📷 Connecting to ${name}…` : `📷 Waiting for ${name} to turn on video…`)),
+      h('div', { class: 'video-controls' }, ...[
+        video.local && h('button', { class: 'btn small', onclick: toggleMic, 'aria-pressed': String(!video.mic) }, video.mic ? '🎤 Mute' : '🔇 Unmute'),
+        video.local && h('button', { class: 'btn small', onclick: toggleCam, 'aria-pressed': String(!video.cam) }, video.cam ? '📷 Camera off' : '📷 Camera on'),
+        h('button', { class: 'btn small ghost', onclick: stopVideo }, 'Leave video'),
+      ].filter(Boolean)));
+  }
+
+  function renderTiles() {
+    const connecting = video.local && video.peerOn && !video.remote;
+    tile($('#opp-video'), video.remote, false, oppName(), connecting ? 'Connecting…' : null, 'down');
+    tile($('#my-video'), video.local, true, 'You', video.local && !video.cam ? 'Camera off' : null, 'up');
+  }
+
+  // One video tile. Its <video> is kept between updates so the picture never flickers.
+  function tile(el, stream, mirror, label, note, grow) {
+    if (!el) return;
+    el.hidden = !stream && !note;
+    if (el.hidden) {
+      el.replaceChildren();
+      return;
     }
-    const remoteEl = box.querySelector('video.remote');
-    const selfEl = box.querySelector('video.self');
-    const note = box.querySelector('.video-note');
-    selfEl.muted = true; // never play your own microphone back to yourself
-    if (remoteEl.srcObject !== video.remote) remoteEl.srcObject = video.remote;
-    if (selfEl.srcObject !== video.local) selfEl.srcObject = video.local;
-    selfEl.hidden = !video.local || !video.cam;
-    note.hidden = Boolean(video.remote);
-    note.textContent = video.peerOn ? `Connecting to ${name}…` : `Waiting for ${name} to turn on video…`;
-    box.querySelector('.video-controls').replaceChildren(...[
-      video.local && h('button', { class: 'btn small', onclick: toggleMic, 'aria-pressed': String(!video.mic) }, video.mic ? '🎤 Mute' : '🔇 Unmute'),
-      video.local && h('button', { class: 'btn small', onclick: toggleCam, 'aria-pressed': String(!video.cam) }, video.cam ? '📷 Camera off' : '📷 Camera on'),
-      h('button', { class: 'btn small ghost', onclick: stopVideo }, 'Leave video'),
-    ].filter(Boolean));
+    if (!el.querySelector('video')) {
+      el.replaceChildren(
+        h('video', { class: mirror ? 'mirrored' : null, autoplay: true, playsinline: true }),
+        h('span', { class: 'tile-note' }),
+        h('span', { class: 'tile-label' }),
+        h('div', {
+          class: 'tile-resize', role: 'separator', 'aria-label': 'Resize the videos',
+          title: 'Drag to resize the videos · double-click to reset',
+          onpointerdown: (e) => startTileResize(e, grow), ondblclick: resetTileSize,
+        }));
+    }
+    const vid = el.querySelector('video');
+    if (mirror) vid.muted = true; // never play your own microphone back to yourself
+    if (vid.srcObject !== (stream || null)) vid.srcObject = stream || null;
+    el.querySelector('.tile-label').textContent = label;
+    const n = el.querySelector('.tile-note');
+    n.textContent = note || '';
+    n.hidden = !note;
+  }
+
+  // Both tiles share one size. The grip on your tile grows it upward; the one on theirs, downward.
+  function startTileResize(e, grow) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const tileEl = e.currentTarget.closest('.video-tile');
+    const startW = tileEl.getBoundingClientRect().width;
+    const x0 = e.clientX;
+    const y0 = e.clientY;
+    document.body.classList.add('resizing');
+    const move = (ev) => {
+      const byX = startW + (ev.clientX - x0);
+      const byY = startW + (((grow === 'up' ? y0 - ev.clientY : ev.clientY - y0) * 16) / 9);
+      applyTileWidth(Math.abs(byY - startW) > Math.abs(byX - startW) ? byY : byX);
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+      document.body.classList.remove('resizing');
+      store.set('r500:tileWidth', Math.round(tileEl.getBoundingClientRect().width));
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+  }
+
+  function applyTileWidth(w) {
+    const game = $('.game');
+    if (!game) return;
+    if (!w) game.style.removeProperty('--tile-w');
+    else game.style.setProperty('--tile-w', `${Math.round(Math.min(480, Math.max(120, w)))}px`);
+  }
+
+  function resetTileSize() {
+    store.del('r500:tileWidth');
+    applyTileWidth(null);
   }
 
   // ---------- side panel width ----------
