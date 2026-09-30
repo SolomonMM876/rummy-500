@@ -203,7 +203,7 @@
     openPeer() {
       if (this.stopped) return;
       this.cb.onStatus('starting');
-      const peer = new Peer(PEER_PREFIX + this.t.code, { debug: 1 });
+      const peer = new Peer(PEER_PREFIX + this.t.code, { debug: 0 });
       this.peer = peer;
       peer.on('open', () => this.cb.onStatus('ready'));
       peer.on('connection', (conn) => this.accept(conn));
@@ -397,7 +397,7 @@
     openPeer() {
       if (this.stopped) return;
       this.cb.onStatus('connecting');
-      const peer = new Peer({ debug: 1 });
+      const peer = new Peer({ debug: 0 });
       this.peer = peer;
       peer.on('open', () => this.connect());
       peer.on('call', (call) => this.cb.onCall(call));
@@ -539,6 +539,9 @@
     menu: null, // the open popup menu: { kind, el }
     drag: null, // a card being dragged within your hand
     attackSeen: undefined, // the last attack already played on this page
+    revealed: new Set(), // hand results already played out on this page
+    revealTimers: [],
+    revealing: false,
     summaryKey: null,
     modal: null,
     dragId: null,
@@ -985,8 +988,12 @@
     const wait = (kind) => Math.max(0, Math.ceil((ui.cool[kind] - Date.now()) / 1000));
     const menuOpen = (kind) => String(Boolean(ui.menu && ui.menu.kind === kind));
     const armed = charges(v, v.seat);
-    const backs = h('div', { class: 'opp-hand', 'aria-label': `${v.names[o]} has ${plural(n, 'card')}` },
-      Array.from({ length: n }, () => backEl(v.backs && v.backs[o], 'sm')));
+    const last = v.phase !== 'play' && v.history.length ? v.history[v.history.length - 1] : null;
+    const backs = last
+      ? h('div', { class: 'opp-hand revealed', 'aria-label': `${v.names[o]} was left holding ${plural(last.left[o].length, 'card')}` },
+        last.left[o].map((id) => cardEl(id)))
+      : h('div', { class: 'opp-hand', 'aria-label': `${v.names[o]} has ${plural(n, 'card')}` },
+        Array.from({ length: n }, () => backEl(v.backs && v.backs[o], 'sm')));
     $('#opp').replaceChildren(
       h('div', { class: 'who' + (theirTurn ? ' active' : '') },
         h('span', { class: 'avatar opp' }, initial(v.names[o])),
@@ -2675,6 +2682,15 @@
       const now = audio.currentTime;
       if (kind === 'poke') { tone(880, now, 0.35, 0.3); tone(1320, now + 0.16, 0.35, 0.3); }
       else if (kind === 'turn') { tone(784, now, 0.3, 0.12); tone(1047, now + 0.13, 0.45, 0.12); }
+      else if (kind === 'boom') { tone(110, now, 0.7, 0.35, 'sine', 50); noiseBurst(now, 0.35, 'lowpass', 300, 0.3); }
+      else if (kind === 'flip') noiseBurst(now, 0.05, 'highpass', 2500, 0.25);
+      else if (kind === 'drumroll') {
+        for (let i = 0; i < 32; i++) noiseBurst(now + i * 0.045, 0.04, 'bandpass', 900, 0.08 + i * 0.006);
+        noiseBurst(now + 1.5, 0.9, 'highpass', 3000, 0.35);
+      } else if (kind === 'fanfare') {
+        [523, 659, 784].forEach((f, i) => tone(f, now + i * 0.12, 0.3, 0.14, 'triangle'));
+        [659, 784, 1047].forEach((f) => tone(f, now + 0.42, 0.9, 0.1, 'triangle'));
+      }
       else if (kind === 'shimmer') { [1318, 1568, 2093, 2637].forEach((f, i) => tone(f, now + i * 0.07, 0.35, 0.07, 'triangle')); }
       else if (kind === 'trade') { tone(523, now, 0.25, 0.12); tone(659, now + 0.1, 0.25, 0.12); tone(784, now + 0.2, 0.4, 0.12); }
       else if (kind === 'taunt') tone(520, now, 0.22, 0.16, 'triangle', 980);
@@ -2789,42 +2805,18 @@
       openSummary(false);
     } else if (ui.modal && ui.modal.kind === 'summary') {
       if (!over && !ui.modal.manual) closeModal();
-      else openSummary(ui.modal.manual);
+      else if (!ui.revealing) refreshSummaryActions(); // never restart a reveal that's playing
     }
   }
 
-  function openSummary(manual) {
+  // Close, plus "Deal the next hand" / "Play again" while you're both between hands.
+  function summaryActions() {
     const v = ui.view;
-    const x = v.history[v.history.length - 1];
-    if (!x) return;
     const me = v.seat;
     const o = 1 - me;
     const gameOver = v.phase === 'gameOver';
-    const waiting = v.phase === 'handOver' || gameOver;
-    const tied = v.phase === 'handOver' && v.totals[0] === v.totals[1] && v.totals[0] >= v.settings.target;
-    const out = x.wentOut == null ? 'Nobody went out: the cards ran out.' : `${x.wentOut === me ? 'You' : v.names[x.wentOut]} went out.`;
-    const row = (p, who) => h('tr', null,
-      h('th', null, who),
-      h('td', null, '+' + x.table[p]),
-      h('td', null, x.inHand[p] ? '−' + x.inHand[p] : '0'),
-      h('td', { class: x.score[p] > 0 ? 'pos' : x.score[p] < 0 ? 'neg' : null }, E.signed(x.score[p])),
-      h('td', null, x.totals[p]));
-    const body = [
-      h('p', { class: 'lede' }, gameOver ? `Final score ${Math.max(...v.totals)} to ${Math.min(...v.totals)}. ${out}` : out,
-        tied ? ' You’re tied, so there’s one more hand.' : ''),
-      gameOver ? recordLine(v) : null,
-      !gameOver && x.won != null ? h('p', { class: 'armed-note' }, x.won === me
-        ? '⚔️ You won the hand, so you get one of each attack to use in the next one.'
-        : `⚔️ ${v.names[x.won]} won the hand and gets one of each attack to use in the next one. Watch out!`) : null,
-      h('table', { class: 'summary' },
-        h('thead', null, h('tr', null, h('th', null, ''), h('th', null, 'On table'), h('th', null, 'Left in hand'), h('th', null, 'This hand'), h('th', null, 'Total'))),
-        h('tbody', null, row(me, 'You'), row(o, nm(v.names[o])))),
-      [me, o].filter((p) => x.left[p].length).map((p) => h('div', { class: 'left-hand' },
-        h('div', { class: 'muted small' }, p === me ? 'Left in your hand:' : `Left in ${v.names[p]}’s hand:`),
-        h('div', { class: 'meld-cards' }, x.left[p].map((id) => cardEl(id, { cls: 'tiny' }))))),
-    ];
     const actions = [h('button', { class: 'btn ghost', onclick: closeModal }, 'Close')];
-    if (waiting) {
+    if (v.phase === 'handOver' || gameOver) {
       if (gameOver && ui.role === 'host') actions.push(h('button', { class: 'btn', onclick: () => send({ type: 'lobby' }) }, 'Change settings'));
       if (v.ready[me]) actions.push(h('span', { class: 'muted' }, `Waiting for ${v.names[o]}…`));
       else {
@@ -2832,8 +2824,164 @@
         actions.push(h('button', { class: 'btn primary', onclick: () => send({ type: 'ready' }) }, gameOver ? 'Play again' : 'Deal the next hand'));
       }
     }
-    const title = gameOver ? (v.winner === me ? 'You win! 🏆' : `${v.names[v.winner]} wins 🏆`) : `Hand ${x.hand} results`;
+    return actions;
+  }
+
+  function refreshSummaryActions() {
+    const bar = $('#modal-root .modal-actions');
+    if (bar) bar.replaceChildren(...summaryActions());
+  }
+
+  // Hand results. The first time they appear they play out like a scoreboard: leftover cards flip over
+  // one by one, the numbers count up, the hand's winner lights up, and at the end of a game there's a
+  // drumroll, the winner, and confetti. Reopening them later just shows the result.
+  function openSummary(manual) {
+    const v = ui.view;
+    const x = v.history[v.history.length - 1];
+    if (!x) return;
+    const me = v.seat;
+    const o = 1 - me;
+    const gameOver = v.phase === 'gameOver';
+    const key = `${v.gameNo}:${v.history.length}`;
+    const animate = !manual && !calm() && !ui.revealed.has(key);
+    ui.revealed.add(key);
+    clearReveal();
+    const tied = v.phase === 'handOver' && v.totals[0] === v.totals[1] && v.totals[0] >= v.settings.target;
+    const out = x.wentOut == null ? 'Nobody went out: the cards ran out.' : `${x.wentOut === me ? 'You' : v.names[x.wentOut]} went out!`;
+    const winnerTitle = gameOver ? (v.winner === me ? 'You win the game! 🏆' : `${v.names[v.winner]} wins the game! 🏆`) : null;
+    const counts = [];
+    const num = (from, to, fmt, cls) => {
+      const el = h('td', { class: cls }, fmt(animate ? from : to));
+      counts.push([el, from, to, fmt]);
+      return el;
+    };
+    const plus = (n) => '+' + n;
+    const minus = (n) => (n ? '−' + n : '0');
+    const rows = [me, o].map((p) => h('tr', { 'data-seat': p },
+      h('th', null, p === me ? 'You' : nm(v.names[p])),
+      num(0, x.table[p], plus),
+      num(0, x.inHand[p], minus),
+      num(0, x.score[p], E.signed, x.score[p] > 0 ? 'pos' : x.score[p] < 0 ? 'neg' : null),
+      num(x.totals[p] - x.score[p], x.totals[p], String)));
+    const flips = [];
+    const leftovers = [o, me].filter((p) => x.left[p].length).map((p) => h('div', { class: 'reveal-row' },
+      h('div', { class: 'muted small' }, p === me ? 'Left in your hand' : `Left in ${v.names[p]}’s hand`),
+      h('div', { class: 'reveal-cards' }, x.left[p].map((id) => {
+        const f = flipCard(id, v.backs && v.backs[p], E.handPoints(id, v.settings), !animate);
+        flips.push(f);
+        return f;
+      }))));
+    const pending = animate ? ' pending' : '';
+    const winnerNote = !gameOver && x.won != null ? h('p', { class: 'armed-note' + pending }, x.won === me
+      ? '⚔️ You won the hand, so you get one of each attack to use in the next one.'
+      : `⚔️ ${v.names[x.won]} won the hand and gets one of each attack to use in the next one. Watch out!`) : null;
+    const banner = gameOver ? h('div', { class: 'winner-banner' + pending }, winnerTitle) : null;
+    const record = gameOver ? recordLine(v) : null;
+    if (record && animate) record.classList.add('pending');
+    const body = [
+      h('p', { class: 'lede' }, out, tied ? ' You’re tied, so there’s one more hand.' : ''),
+      leftovers.length ? h('div', { class: 'reveal-hands' }, leftovers) : h('p', { class: 'muted' }, 'Nobody had cards left over.'),
+      h('table', { class: 'summary' },
+        h('thead', null, h('tr', null, h('th', null, ''), h('th', null, 'On table'), h('th', null, 'Left in hand'), h('th', null, 'This hand'), h('th', null, 'Total'))),
+        h('tbody', null, rows)),
+      winnerNote,
+      banner,
+      record,
+    ];
+    const title = animate ? (gameOver ? 'The final hand…' : `Hand ${x.hand} is over`) : winnerTitle || `Hand ${x.hand} results`;
+    const actions = animate ? [h('button', { class: 'btn ghost', onclick: skipReveal }, 'Skip ▸▸')] : summaryActions();
     openModal({ title, body, actions, kind: 'summary', manual, wide: true });
+    if (!animate) {
+      highlightWinner(rows, x);
+      return;
+    }
+    ui.revealing = true;
+    sfx('boom');
+    const box = $('#modal-root .modal');
+    if (box) box.animate([{ transform: 'scale(0.85)', opacity: 0 }, { transform: 'scale(1.03)', opacity: 1, offset: 0.7 }, { transform: 'scale(1)', opacity: 1 }], { duration: 450, easing: 'ease-out' });
+    let t = 800;
+    flips.forEach((f) => {
+      later(t, () => { f.classList.add('shown'); sfx('flip'); });
+      t += 280;
+    });
+    t += 400;
+    later(t, () => counts.forEach(([el, from, to, fmt]) => countUp(el, from, to, 1000, fmt)));
+    t += 1200;
+    later(t, () => {
+      highlightWinner(rows, x);
+      if (winnerNote) winnerNote.classList.remove('pending');
+    });
+    if (gameOver) {
+      later(t + 300, () => sfx('drumroll'));
+      t += 2000;
+      later(t, () => {
+        const titleEl = $('#modal-title');
+        if (titleEl) titleEl.textContent = winnerTitle;
+        banner.classList.remove('pending');
+        if (record) record.classList.remove('pending');
+        sfx('fanfare');
+        confetti();
+      });
+      t += 700;
+    }
+    later(t, finishReveal);
+  }
+
+  const later = (ms, fn) => ui.revealTimers.push(setTimeout(fn, ms));
+
+  function clearReveal() {
+    ui.revealTimers.forEach(clearTimeout);
+    ui.revealTimers = [];
+    ui.revealing = false;
+  }
+
+  function finishReveal() {
+    clearReveal();
+    refreshSummaryActions();
+  }
+
+  // Jump to the end: the reveal is already marked as seen, so this draws the finished results.
+  function skipReveal() {
+    clearReveal();
+    openSummary(ui.modal ? ui.modal.manual : false);
+  }
+
+  function highlightWinner(rows, x) {
+    rows.forEach((r) => r.classList.toggle('hand-winner', x.won != null && Number(r.dataset.seat) === x.won));
+  }
+
+  // A leftover card that starts face down and flips over, showing what it costs.
+  function flipCard(id, back, pts, shown) {
+    return h('div', { class: 'flip' + (shown ? ' shown' : '') },
+      h('div', { class: 'flip-inner' },
+        h('div', { class: 'flip-face' }, cardEl(id, { cls: 'tiny' })),
+        h('div', { class: 'flip-face flip-back' }, backEl(back, 'tiny'))),
+      h('span', { class: 'flip-pts' }, `−${pts}`));
+  }
+
+  function countUp(el, from, to, ms, fmt) {
+    const t0 = Date.now();
+    const step = () => {
+      const k = Math.min(1, (Date.now() - t0) / ms);
+      el.textContent = fmt(Math.round(from + (to - from) * (1 - (1 - k) ** 3)));
+      if (k < 1) ui.revealTimers.push(setTimeout(step, 30));
+    };
+    step();
+  }
+
+  function confetti() {
+    if (calm()) return;
+    const colours = ['#f3c24f', '#ff6b6b', '#58aefc', '#7be0a6', '#c792ea', '#fffdf7'];
+    for (let i = 0; i < 90; i++) {
+      const el = h('div', { class: 'confetti', 'aria-hidden': 'true' });
+      el.style.background = colours[i % colours.length];
+      fx().append(el);
+      const x = rng() * innerWidth;
+      el.animate([
+        { transform: `translate(${x}px, -20px) rotate(0deg)` },
+        { transform: `translate(${x + (rng() - 0.5) * 220}px, ${innerHeight + 20}px) rotate(${(rng() - 0.5) * 1080}deg)` },
+      ], { duration: 2200 + rng() * 1800, delay: rng() * 700, easing: 'cubic-bezier(.3,.6,.6,1)', fill: 'backwards' }).onfinish = () => el.remove();
+    }
   }
 
   function showRules() {
