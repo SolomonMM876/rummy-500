@@ -80,8 +80,11 @@
     ['yawn', '🥱', 'Is that all you’ve got?'],
     ['gg', '🤝', 'Good game!'],
     ['icecream', '🍦', 'Here, have an ice cream. You’ve earned it.'],
+    ['maxibon', '🍦', 'Here, have my Maxibon…', 'maxibon'], // offered, then snatched back
   ];
   const TAUNT_BY_ID = Object.fromEntries(TAUNTS.map((t) => [t[0], t]));
+  // A generic ice cream sandwich (half dipped in chocolate, half biscuit) for the Maxibon taunt.
+  const MAXIBON_SVG = '<svg viewBox="0 0 60 30" aria-hidden="true"><rect x="2" y="3" width="30" height="24" rx="4" fill="#4a2a17"/><g fill="#c9a26b"><circle cx="8" cy="9" r="1.2"/><circle cx="14" cy="16" r="1"/><circle cx="21" cy="8" r="1.1"/><circle cx="26" cy="19" r="1.2"/><circle cx="10" cy="22" r="1"/><circle cx="19" cy="23" r=".9"/><circle cx="27" cy="11" r=".9"/></g><rect x="30" y="3" width="28" height="7" rx="2" fill="#3b2415"/><rect x="30" y="10" width="28" height="10" fill="#fdf4dc"/><rect x="30" y="20" width="28" height="7" rx="2" fill="#3b2415"/><g fill="#5a3a24"><circle cx="36" cy="6.5" r=".8"/><circle cx="44" cy="6.5" r=".8"/><circle cx="52" cy="6.5" r=".8"/><circle cx="36" cy="23.5" r=".8"/><circle cx="44" cy="23.5" r=".8"/><circle cx="52" cy="23.5" r=".8"/></g><path d="M5 6.5H28" stroke="#6e4428" stroke-width="1.4" stroke-linecap="round" opacity=".7"/></svg>';
   // Attacks you earn by winning a hand (the rules live in engine.js).
   const ATTACK_INFO = {
     smash: { emoji: '🪓', label: 'Break the table', blurb: 'crack their table in half', sent: (n) => `You smashed ${n}’s table in half!` },
@@ -1419,8 +1422,8 @@
   // Popup menus under the Taunt and Attacks buttons.
   function menuItems(kind) {
     if (kind === 'taunt') {
-      return TAUNTS.map(([id, emoji, text]) => h('button', { type: 'button', class: 'taunt', role: 'menuitem', onclick: () => doTaunt(id) },
-        h('span', { class: 'taunt-emoji', 'aria-hidden': 'true' }, emoji), h('span', null, text)));
+      return TAUNTS.map(([id, emoji, text, special]) => h('button', { type: 'button', class: 'taunt', role: 'menuitem', onclick: () => doTaunt(id) },
+        tauntIcon('taunt-emoji', emoji, special), h('span', null, text)));
     }
     const mine = (ui.view.attacks && ui.view.attacks[ui.view.seat]) || {};
     const wild = (ui.view.wild && ui.view.wild[ui.view.seat]) || 0;
@@ -1466,21 +1469,69 @@
     if (ui.screen === 'game' && ui.view) renderOpp();
   }
 
+  function tauntIcon(cls, emoji, special) {
+    const el = h('span', { class: cls + (special ? ' art' : ''), 'aria-hidden': 'true' }, special ? null : emoji);
+    if (special === 'maxibon') el.innerHTML = MAXIBON_SVG;
+    return el;
+  }
+
+  // The Maxibon floats over as if it's a gift, dangles in front of the other player, then gets snatched back.
+  function maxibonTease(fromOpp) {
+    if (calm()) return;
+    const hand = $('#hand');
+    const avatar = $('#opp .avatar');
+    if (!hand || !avatar) return;
+    const me = hand.getBoundingClientRect();
+    const them = avatar.getBoundingClientRect();
+    const mine = { x: me.left + me.width / 2, y: me.top - 20 };
+    const theirs = { x: them.left + them.width / 2 + 70, y: them.bottom + 60 };
+    const giver = fromOpp ? theirs : mine;
+    const taker = fromOpp ? mine : theirs;
+    const near = { x: taker.x + (giver.x - taker.x) * 0.12, y: taker.y + (giver.y - taker.y) * 0.12 }; // just out of reach
+    const treat = h('div', { class: 'maxibon', 'aria-hidden': 'true' });
+    treat.innerHTML = MAXIBON_SVG;
+    fx().append(treat);
+    const at = (p, s, r = 0) => `translate(${p.x}px, ${p.y}px) scale(${s}) rotate(${r}deg)`;
+    const T = 3400;
+    treat.animate([
+      { transform: at(giver, 0.4), opacity: 0 },
+      { transform: at(giver, 1), opacity: 1, offset: 0.1 },
+      { transform: at(near, 1.25, -6), opacity: 1, offset: 0.52 },
+      { transform: at(near, 1.25, 6), opacity: 1, offset: 0.62 },
+      { transform: at(near, 1.3, -4), opacity: 1, offset: 0.7 },
+      { transform: at(giver, 0.9), opacity: 1, offset: 0.84 },
+      { transform: at(giver, 0.4), opacity: 0 },
+    ], { duration: T, easing: 'ease-in-out' }).onfinish = () => treat.remove();
+    setTimeout(() => {
+      sfx('whoosh');
+      const label = h('div', { class: 'psych', 'aria-hidden': 'true' }, 'Psych! It’s mine 😋');
+      Object.assign(label.style, { left: `${near.x}px`, top: `${near.y - 40}px` });
+      fx().append(label);
+      label.animate([
+        { transform: 'translateY(6px) scale(0.8)', opacity: 0 },
+        { transform: 'translateY(0) scale(1)', opacity: 1, offset: 0.15 },
+        { transform: 'translateY(-12px)', opacity: 1, offset: 0.8 },
+        { transform: 'translateY(-18px)', opacity: 0 },
+      ], { duration: 1800, easing: 'ease-out' }).onfinish = () => label.remove();
+    }, T * 0.7);
+  }
+
   // A speech bubble by the opponent's avatar, or above your status line for your own taunts.
   function showTaunt(id, who) {
-    const [, emoji, text] = TAUNT_BY_ID[id];
+    const [, emoji, text, special] = TAUNT_BY_ID[id];
     const anchor = who === 'opp' ? $('#opp .avatar') : $('#status');
     if (!anchor) return;
     const r = anchor.getBoundingClientRect();
     const old = $(`#fx .bubble.${who}`);
     if (old) old.remove();
     const bubble = h('div', { class: 'bubble ' + who, role: 'status' },
-      h('span', { class: 'bubble-emoji', 'aria-hidden': 'true' }, emoji), h('span', null, text));
+      tauntIcon('bubble-emoji', emoji, special), h('span', null, text));
     Object.assign(bubble.style, who === 'opp'
       ? { left: `${Math.max(8, r.left - 4)}px`, top: `${r.bottom + 12}px` }
       : { left: `${Math.max(8, r.left + 16)}px`, top: `${r.top - 12}px` });
     fx().append(bubble);
-    burst(emoji, r.left + (who === 'opp' ? r.width / 2 : 60), who === 'opp' ? r.top + r.height / 2 : r.top);
+    if (special === 'maxibon') maxibonTease(who === 'opp');
+    else burst(emoji, r.left + (who === 'opp' ? r.width / 2 : 60), who === 'opp' ? r.top + r.height / 2 : r.top);
     sfx('taunt');
     setTimeout(() => {
       bubble.classList.add('out');

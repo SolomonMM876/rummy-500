@@ -447,6 +447,12 @@ body.nudge .game { animation: nudge 0.5s ease; }
 .carried-fan { position: fixed; left: 0; top: 0; display: flex; translate: -50% -50%; pointer-events: none; filter: drop-shadow(0 10px 14px rgba(0, 0, 0, 0.4)); }
 .carried-fan .card + .card { margin-left: -24px; }
 
+/* ---------- the Maxibon taunt ---------- */
+.taunt-emoji.art, .bubble-emoji.art { display: inline-grid; place-items: center; width: 36px; flex: none; }
+.taunt-emoji.art svg, .bubble-emoji.art svg { display: block; width: 36px; height: 18px; }
+.maxibon { position: fixed; left: 0; top: 0; width: 120px; height: 60px; translate: -50% -50%; filter: drop-shadow(0 10px 14px rgba(0, 0, 0, 0.45)); }
+.maxibon svg { display: block; width: 100%; height: 100%; }
+
 /* ---------- games won ---------- */
 .record { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 2px 0 10px; padding: 8px 10px; border-radius: 10px; background: rgba(243, 194, 79, 0.1); border: 1px solid rgba(243, 194, 79, 0.3); }
 .record-label { font-size: 12px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--gold); }
