@@ -25,7 +25,7 @@
   const RANK_PLURAL = [null, 'Aces', '2s', '3s', '4s', '5s', '6s', '7s', '8s', '9s', '10s', 'Jacks', 'Queens', 'Kings'];
   const SCORING = ['simplified', 'traditional', 'advanced'];
   // Cosmetic attacks: whoever scores more in a hand gets one of each for the next hand.
-  const ATTACKS = ['smash', 'spiders', 'bloom', 'tornado', 'catstorm', 'gray', 'peek'];
+  const ATTACKS = ['smash', 'spiders', 'bloom', 'tornado', 'catstorm', 'gray', 'peek', 'fire'];
   const ATTACK_NOTE = {
     smash: (name) => `${name} smashed the table in half! 💥`,
     spiders: (name) => `${name} released the spiders! 🕷️`,
@@ -34,6 +34,7 @@
     catstorm: (name) => `${name} made it rain cats! 🐈`,
     gray: (name) => `${name} drained the colour from the other hand! 🌫️`,
     peek: (name) => `${name} spotted one of the other player’s cards in a mirror! 🔍`,
+    fire: (name) => `${name} set the other player’s cards on fire! 🔥`,
   };
 
   const isJoker = (id) => id.charAt(0) === 'X';
@@ -298,6 +299,7 @@
       lastAttack: null, // { n, by, kind }: n counts up so each attack plays once
       trade: null, // an open offer: { from: seat, card }
       peek: null, // the last mirror peek: { n, by, card } (the card came from the other player's hand)
+      forfeit: null, // a game someone gave up: { by: seat, midHand, left: both hands as they were }
       log: [],
       logSeq: 0,
       seq: 0,
@@ -589,13 +591,27 @@
       note(g, `${g.names[seat]} turned down the trade.`);
     },
 
+    // Give up the game, during a hand or between hands: the other player wins it. The hand in
+    // progress isn't scored, and you're ready for the next game, so it starts when they are.
+    forfeit(g, seat) {
+      if (g.phase === 'gameOver') return 'The game is already over.';
+      g.forfeit = { by: seat, midHand: g.phase === 'play', left: g.hands.map((x) => x.slice()) };
+      g.winner = 1 - seat;
+      g.phase = 'gameOver';
+      g.ready = [false, false];
+      g.ready[seat] = true;
+      g.ti = blankTurn();
+      g.trade = null;
+      note(g, `${g.names[seat]} forfeited the game, so ${g.names[g.winner]} wins it! 🏳️`);
+    },
+
     // Both players confirm before the next hand (or a new game) is dealt.
     ready(g, seat, act, rng) {
       if (g.phase === 'play') return 'The hand is still being played.';
       g.ready[seat] = true;
       if (!(g.ready[0] && g.ready[1])) return;
       if (g.phase === 'gameOver') {
-        Object.assign(g, { gameNo: g.gameNo + 1, handNo: 0, starter: null, history: [], totals: [0, 0], winner: null, wild: [1, 1] });
+        Object.assign(g, { gameNo: g.gameNo + 1, handNo: 0, starter: null, history: [], totals: [0, 0], winner: null, wild: [1, 1], forfeit: null });
         note(g, 'New game!');
       }
       dealHand(g, rng);
@@ -646,6 +662,7 @@
       lastAttack: g.lastAttack || null,
       trade: g.trade || null,
       peek: g.peek || null,
+      forfeit: g.forfeit || null,
       log: g.log.slice(-80),
       seq: g.seq,
     };

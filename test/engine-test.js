@@ -218,7 +218,10 @@ goOut(g); // Sol +18, Alex −17
 eq(g.history[0].won, 0, 'higher hand score wins the hand');
 act(g, 0, { type: 'ready' });
 act(g, 1, { type: 'ready' });
-eq([g.attacks[0], g.attacks[1], g.wild], [{ smash: 1, spiders: 1, bloom: 1, tornado: 1, catstorm: 1, gray: 1, peek: 1 }, {}, [2, 1]], 'the winner gets one of each attack; everyone has a wild one, plus one for the meld');
+eq([g.attacks[0], g.attacks[1], g.wild], [{ smash: 1, spiders: 1, bloom: 1, tornado: 1, catstorm: 1, gray: 1, peek: 1, fire: 1 }, {}, [2, 1]], 'the winner gets one of each attack; everyone has a wild one, plus one for the meld');
+ok(!act(g, 0, { type: 'attack', kind: 'fire' }) && g.attacks[0].fire === 0 && g.lastAttack.kind === 'fire', 'set their cards on fire');
+g.attacks[0].fire = 1;
+g.lastAttack = null;
 g.wild = [1, 1]; // keep the counting below simple
 ok(!act(g, 1, { type: 'attack', kind: 'spiders' }) && g.wild[1] === 0, 'the loser can still spend their wild attack');
 eq(act(g, 1, { type: 'attack', kind: 'spiders' }), 'You don’t have that attack. Win a hand to earn attacks for the next one.', 'but only once');
@@ -291,6 +294,28 @@ setup(g, { hands: [['2H', '4S', 'KD'], ['3C', '9S']], discard: ['6S', '4C', '7H'
 act(g, 0, { type: 'draw-discard', index: 1 });
 ok(act(g, 0, { type: 'trade-offer', card: '4C' }), 'can’t trade away a card you must play');
 ok(!act(g, 0, { type: 'trade-offer', card: 'KD' }) && !act(g, 1, { type: 'trade-accept', card: '9S' }) && !g.ti.canUndo && g.ti.undo.length === 0, 'a trade clears Undo');
+
+// Forfeiting: the other player wins the game, and the next one starts when they're ready.
+g = game();
+setup(g, { hands: [['5H', '6H', '9C'], ['3C', '9S', '5D']], discard: ['2S'], stock: ['7H', '8D'] });
+g.totals = [120, 60];
+act(g, 0, { type: 'draw-stock' });
+act(g, 0, { type: 'trade-offer', card: '9C' });
+ok(!act(g, 1, { type: 'forfeit' }), 'forfeit during a hand, even on the other player’s turn');
+eq([g.phase, g.winner, g.forfeit, g.ready, g.trade, g.totals, g.history.length],
+  ['gameOver', 0, { by: 1, midHand: true, left: [['5H', '6H', '9C', '8D'], ['3C', '9S', '5D']] }, [false, true], null, [120, 60], 0],
+  'the other player wins, the hand isn’t scored, and the forfeiter is ready for the next game');
+ok(g.log[g.log.length - 1].text.includes('forfeited'), 'the move list says so');
+eq(R.viewFor(g, 0).forfeit, g.forfeit, 'both players see the forfeit');
+eq(act(g, 0, { type: 'discard', card: '9C' }), 'The hand is over.', 'no more moves');
+ok(act(g, 0, { type: 'attack', kind: 'fire' }), 'no attacks either');
+eq(act(g, 0, { type: 'forfeit' }), 'The game is already over.', 'a finished game can’t be forfeited');
+ok(!act(g, 0, { type: 'ready' }), 'the winner is ready too');
+eq([g.phase, g.gameNo, g.handNo, g.totals, g.history, g.winner, g.forfeit, g.wild], ['play', 2, 1, [0, 0], [], null, null, [1, 1]], 'so the next game is dealt');
+g = game();
+goOut(g);
+ok(!act(g, 0, { type: 'forfeit' }) && g.phase === 'gameOver' && g.winner === 1 && g.forfeit.midHand === false, 'forfeit between hands, even after winning one');
+eq(g.totals, [18, -17], 'the finished hand still counts');
 
 // Views keep each hand private.
 g = game();

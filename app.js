@@ -99,7 +99,11 @@
     catstorm: { emoji: '🐈', label: 'Cat storm', blurb: 'make it rain cats on their screen', sent: (n) => `It’s raining cats on ${n}!` },
     gray: { emoji: '🌫️', label: 'Drain the colour', blurb: 'turn their hand grey for 30 seconds', sent: (n) => `${n}’s hand has gone grey for 30 seconds!` },
     peek: { emoji: '🔍', label: 'Mirror peek', blurb: 'see one of their cards in a mirror', sent: (n) => `You spotted one of ${n}’s cards!` },
+    fire: { emoji: '🔥', label: 'Burn their cards', blurb: 'set their hand on fire until it crumbles to ash', sent: (n) => `${n}’s cards are going up in flames!` },
   };
+  // How the fire plays out, in ms: each card chars from the bottom up, the hand smoulders, crumbles to ash,
+  // stays gone for a moment, then grows back.
+  const FIRE = { burn: 1500, spread: 1100, hold: 500, crumble: 650, gone: 700, reborn: 700, scorch: 20000 };
 
   // ---------- helpers ----------
 
@@ -539,6 +543,7 @@
     menu: null, // the open popup menu: { kind, el }
     drag: null, // a card being dragged within your hand
     attackSeen: undefined, // the last attack already played on this page
+    fire: { mine: null, theirs: null }, // a fire burning your hand, or the other player's (as you see it)
     revealed: new Set(), // hand results already played out on this page
     revealTimers: [],
     revealing: false,
@@ -584,7 +589,7 @@
     if (ui.net) ui.net.stop();
     closeModal();
     closeMenu();
-    Object.assign(ui, { net: null, role: null, code: null, view: null, status: 'idle', summaryKey: null, orderKey: null, order: [], attackSeen: undefined, drag: null });
+    Object.assign(ui, { net: null, role: null, code: null, view: null, status: 'idle', summaryKey: null, orderKey: null, order: [], attackSeen: undefined, drag: null, fire: { mine: null, theirs: null } });
     ui.selected.clear();
     ui.fresh.clear();
   }
@@ -715,7 +720,8 @@
   function recentRow(t) {
     const g = t.game;
     const bits = [t.players[1].name ? `vs ${t.players[1].name}` : 'waiting for a friend'];
-    if (g && g.phase === 'gameOver') bits.push(`${g.names[g.winner]} won ${Math.max(...g.totals)}–${Math.min(...g.totals)}`);
+    if (g && g.phase === 'gameOver' && g.forfeit) bits.push(`${g.names[g.winner]} won when ${g.names[g.forfeit.by]} forfeited`);
+    else if (g && g.phase === 'gameOver') bits.push(`${g.names[g.winner]} won ${Math.max(...g.totals)}–${Math.min(...g.totals)}`);
     else if (g) bits.push(`hand ${g.handNo}, ${g.totals[0]}–${g.totals[1]}`);
     return h('div', { class: 'recent-row' },
       h('div', null, h('strong', null, 'Table ' + t.code), h('span', { class: 'muted' }, ' · ' + bits.join(' · '))),
@@ -974,7 +980,24 @@
         ui.role === 'host' ? h('button', { class: 'btn ghost small', onclick: copyInvite }, 'Invite link') : null,
         h('button', { class: 'btn ghost small', onclick: chooseStyle }, 'Card style'),
         h('button', { class: 'btn ghost small', onclick: showRules }, 'Rules'),
+        v.phase !== 'gameOver' ? h('button', { class: 'btn ghost small', onclick: confirmForfeit, title: 'Give up this game and move on to the next one' }, '🏳️ Forfeit') : null,
         h('a', { class: 'btn ghost small', href: '#', title: 'Back to the start page. The game is saved.' }, 'Leave')));
+  }
+
+  function confirmForfeit() {
+    const v = ui.view;
+    const o = v.names[1 - v.seat];
+    openModal({
+      title: '🏳️ Forfeit this game?',
+      body: [
+        h('p', null, `${o} wins the game, and it counts in the games won. `, v.phase === 'play' ? 'The hand you’re playing isn’t scored.' : ''),
+        h('p', null, `The next game starts as soon as ${o} is ready.`),
+      ],
+      actions: [
+        h('button', { class: 'btn ghost', onclick: closeModal }, 'Keep playing'),
+        h('button', { class: 'btn danger', onclick: () => { closeModal(); send({ type: 'forfeit' }); } }, 'Forfeit the game'),
+      ],
+    });
   }
 
   function renderOpp() {
@@ -988,12 +1011,17 @@
     const wait = (kind) => Math.max(0, Math.ceil((ui.cool[kind] - Date.now()) / 1000));
     const menuOpen = (kind) => String(Boolean(ui.menu && ui.menu.kind === kind));
     const armed = charges(v, v.seat);
-    const last = v.phase !== 'play' && v.history.length ? v.history[v.history.length - 1] : null;
-    const backs = last
-      ? h('div', { class: 'opp-hand revealed', 'aria-label': `${v.names[o]} was left holding ${plural(last.left[o].length, 'card')}` },
-        last.left[o].map((id) => cardEl(id)))
+    // Between hands and after the game, their leftover cards are face up.
+    const left = v.phase === 'play' ? null : v.forfeit ? v.forfeit.left : v.history.length ? v.history[v.history.length - 1].left : null;
+    const backs = left
+      ? h('div', { class: 'opp-hand revealed', 'aria-label': `${v.names[o]} was left holding ${plural(left[o].length, 'card')}` },
+        left[o].map((id) => cardEl(id)))
       : h('div', { class: 'opp-hand', 'aria-label': `${v.names[o]} has ${plural(n, 'card')}` },
-        Array.from({ length: n }, () => backEl(v.backs && v.backs[o], 'sm')));
+        Array.from({ length: n }, (_, k) => {
+          const el = burnable(backEl(v.backs && v.backs[o], 'sm'), 'theirs', k);
+          el.style.setProperty('--i', k); // staggers the fire's crumble and regrowth
+          return el;
+        }));
     $('#opp').replaceChildren(
       h('div', { class: 'who' + (theirTurn ? ' active' : '') },
         h('span', { class: 'avatar opp' }, initial(v.names[o])),
@@ -1091,6 +1119,7 @@
     let tone = '';
     let extra = null;
     if (v.phase === 'handOver') text = `Hand ${v.handNo} is over.`;
+    else if (v.phase === 'gameOver' && v.forfeit) text = v.forfeit.by === me ? `Game over: you forfeited, so ${v.names[o]} wins.` : `Game over: ${v.names[o]} forfeited, so you win!`;
     else if (v.phase === 'gameOver') text = `Game over: ${v.winner === me ? 'you win' : v.names[v.winner] + ' wins'}!`;
     else if (v.turn !== me) {
       text = `${v.names[o]}’s turn: ${v.step === 'draw' ? 'drawing' : 'playing'}…`;
@@ -1136,6 +1165,7 @@
       el.setAttribute('aria-label', E.label(id));
       if (must) el.append(h('span', { class: 'tag' }, 'must play'));
       else if (keep) el.append(h('span', { class: 'tag muted' }, 'can’t discard'));
+      burnable(el, 'mine', id);
       el.addEventListener('pointerdown', (e) => startDrag(e, id, el));
       el.addEventListener('click', () => { if (!ui.dragEnded) toggleSelect(id); });
       el.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSelect(id); } });
@@ -1181,7 +1211,7 @@
             ? v.history.map((x) => h('tr', null, h('td', null, x.hand), cell(x.score[me]), cell(x.score[o])))
             : h('tr', null, h('td', { colspan: 3, class: 'muted' }, 'Each hand’s score is added here when it ends.'))),
           h('tfoot', null, h('tr', null, h('th', null, 'Total'), h('th', null, v.totals[me]), h('th', null, v.totals[o])))),
-        v.history.length ? h('button', { class: 'link', onclick: () => openSummary(true) }, 'Last hand in detail') : null),
+        v.history.length ? h('button', { class: 'link', onclick: () => openHandResults(true) }, 'Last hand in detail') : null),
       h('section', { class: 'panel log' },
         h('h3', null, 'Moves'),
         h('ol', null, v.log.slice().reverse().map((e) => h('li', null, e.text)))));
@@ -1482,6 +1512,7 @@
       top: `${r.bottom + 8}px`,
       left: `${Math.max(8, Math.min(r.right - width, innerWidth - width - 8))}px`,
       width: `${width}px`,
+      maxHeight: `${Math.max(160, innerHeight - r.bottom - 16)}px`, // scrolls in a short window
     });
     document.body.append(el);
     ui.menu = { kind, el };
@@ -1740,7 +1771,11 @@
       }
       return;
     }
-    if (la.by === ui.view.seat) launchAttack(la.kind);
+    if (la.by === ui.view.seat) {
+      const burn = la.kind === 'fire' && !calm(); // their cards burning says it all (a message would cover them)
+      launchAttack(la.kind, burn);
+      if (burn) setTimeout(() => startFire('theirs'), 700); // as the flame lands on them
+    } else if (la.kind === 'fire') burnHand(ui.view.names[la.by]);
     else if (la.kind === 'smash') smashTable(ui.view.names[la.by]);
     else if (la.kind === 'spiders') releaseSpiders(ui.view.names[la.by]);
     else if (la.kind === 'bloom') mushroomBloom(ui.view.names[la.by]);
@@ -1750,9 +1785,9 @@
   }
 
   // What the attacker sees: the attack flies over to the other player.
-  function launchAttack(kind) {
+  function launchAttack(kind, quiet) {
     const info = ATTACK_INFO[kind];
-    toast(`${info.emoji} ${info.sent(oppName())}`, 'poke');
+    if (!quiet) toast(`${info.emoji} ${info.sent(oppName())}`, 'poke');
     const to = $('#opp .avatar');
     if (calm() || !to) return;
     const from = ($('#attack-btn') || $('#status')).getBoundingClientRect();
@@ -2093,6 +2128,108 @@
         { transform: `translate(${x + drift}px, ${H + size}px) rotate(${(rng() - 0.5) * 720}deg)` },
       ], { duration: 1600 + rng() * 1800, delay: 300 + rng() * 3200, easing: 'cubic-bezier(.4,0,.8,.6)', fill: 'backwards' }).onfinish = () => el.remove();
     }
+  }
+
+  // ---------- fire ----------
+  // Flames catch on one card and spread along the hand. Each card chars from the bottom up, the whole hand
+  // smoulders, crumbles to ash, and a moment later grows back (a little singed). The char and flames are
+  // drawn inside the cards (see burnable), so the hand can redraw mid-fire without losing its place.
+
+  // You're the target: a warm glow comes up from the bottom of the screen while your hand burns.
+  function burnHand(name) {
+    toast(`🔥 ${name} set your cards on fire!`, 'poke');
+    if (calm()) { sfx('fire', 2); scorch(); return; }
+    const secs = startFire('mine');
+    if (!secs) return;
+    const heat = h('div', { class: 'burn-heat', 'aria-hidden': 'true' });
+    fx().append(heat);
+    const T = secs * 1000 + 600;
+    heat.animate([{ opacity: 0 }, { opacity: 1, offset: 400 / T }, { opacity: 1, offset: (T - 900) / T }, { opacity: 0 }], { duration: T })
+      .onfinish = () => heat.remove();
+  }
+
+  // Sets one side's cards alight; returns how long they burn before crumbling, in seconds.
+  function startFire(side) {
+    if (ui.screen !== 'game' || !ui.view || ui.fire[side]) return 0; // one fire at a time
+    const v = ui.view;
+    const mine = side === 'mine';
+    const box = mine ? $('#hand') : $('#opp');
+    const keys = mine ? ui.order.filter((id) => v.hand.includes(id)) : [...Array(v.counts[1 - v.seat]).keys()];
+    if (!box || !keys.length || (!mine && v.phase !== 'play')) return 0;
+    const first = Math.floor(rng() * keys.length); // where it catches
+    const step = Math.min(140, FIRE.spread / Math.max(1, keys.length - 1));
+    const delays = Object.fromEntries(keys.map((k, i) => [k, Math.round(Math.abs(i - first) * step)]));
+    const fire = { t0: Date.now(), delays };
+    ui.fire[side] = fire;
+    const redraw = () => { if (ui.screen === 'game' && ui.view) (mine ? renderHand : renderOpp)(); };
+    redraw();
+    const crumbleAt = Math.max(...Object.values(delays)) + FIRE.burn + FIRE.hold;
+    sfx('fire', crumbleAt / 1000);
+    const soon = (ms, fn) => setTimeout(() => { if (ui.fire[side] === fire) fn(); }, ms);
+    soon(crumbleAt, () => {
+      box.classList.add('crumbling');
+      sfx('ash');
+      ashes(box, mine);
+    });
+    soon(crumbleAt + FIRE.crumble + FIRE.gone, () => {
+      ui.fire[side] = null;
+      box.classList.remove('crumbling');
+      box.classList.add('reborn');
+      redraw();
+      sfx('reborn');
+      if (mine) scorch();
+      setTimeout(() => box.classList.remove('reborn'), FIRE.reborn + 45 * keys.length);
+    });
+    return crumbleAt / 1000;
+  }
+
+  // Adds the fire's char and flames to a card, picking up the burn wherever it's got to.
+  function burnable(el, side, key) {
+    const f = ui.fire[side];
+    const d = f && f.delays[key];
+    if (d == null) return el;
+    el.classList.add('burning');
+    el.append(h('span', { class: 'burn-char', 'aria-hidden': 'true', style: `--d:${Math.round(d - (Date.now() - f.t0))}ms;--burn:${FIRE.burn}ms` },
+      h('span', { class: 'burn-flames' }, h('span', null, '🔥'), h('span', null, '🔥'), h('span', null, '🔥'))));
+    return el;
+  }
+
+  // As the hand crumbles: ash drifts down, embers float up, and (on your own hand) smoke rises.
+  function ashes(box, big) {
+    box.querySelectorAll('.card').forEach((card) => {
+      const r = card.getBoundingClientRect();
+      const bit = (cls, x, y, frames, ms) => {
+        const el = h('div', { class: cls, 'aria-hidden': 'true' });
+        fx().append(el);
+        el.animate(frames.map(([dx, dy, s, o, rot = 0]) => ({ transform: `translate(${x + dx}px, ${y + dy}px) scale(${s}) rotate(${rot}deg)`, opacity: o })),
+          { duration: ms, delay: rng() * 250, easing: 'ease-out', fill: 'backwards' }).onfinish = () => el.remove();
+      };
+      const spot = () => [r.left + rng() * r.width, r.top + r.height * (0.3 + rng() * 0.7)];
+      for (let i = 0; i < (big ? 6 : 3); i++) {
+        const [x, y] = spot();
+        const drift = (rng() - 0.5) * 60;
+        bit('burn-ash', x, y, [[0, 0, 1, 0.9], [drift * 0.5, 30, 1, 0.8, 120], [drift, 70 + rng() * 50, 0.7, 0, 260]], 1100 + rng() * 700);
+      }
+      for (let i = 0; i < (big ? 3 : 2); i++) {
+        const [x, y] = spot();
+        const sway = (rng() - 0.5) * 50;
+        bit('burn-ember', x, y, [[0, 0, 1, 1], [sway, -50, 0.9, 1], [-sway * 0.4, -110 - rng() * 60, 0.4, 0]], 900 + rng() * 700);
+      }
+      if (big) {
+        bit('burn-smoke', r.left + r.width / 2, r.top + r.height / 2,
+          [[0, 0, 0.5, 0.7], [(rng() - 0.5) * 40, -120 - rng() * 60, 2.2, 0]], 1800 + rng() * 600);
+      }
+    });
+  }
+
+  // Your cards keep singed edges for a while after the fire.
+  let scorchTimer = null;
+  function scorch() {
+    const hand = $('#hand');
+    if (!hand) return;
+    hand.classList.add('scorched');
+    clearTimeout(scorchTimer);
+    scorchTimer = setTimeout(() => { const el = $('#hand'); if (el) el.classList.remove('scorched'); }, FIRE.scorch);
   }
 
   // When someone melds or lays off, their hand or foot carries the cards onto the table.
@@ -2675,7 +2812,63 @@
     src.stop(at + 4.7);
   }
 
-  function sfx(kind) {
+  // A fire: a whoomph as it catches, a low roar, and crackles until it dies down.
+  function blaze(at, dur) {
+    const src = audio.createBufferSource();
+    const filter = audio.createBiquadFilter();
+    const gain = audio.createGain();
+    src.buffer = noiseBuffer();
+    src.loop = true;
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(900, at);
+    filter.frequency.exponentialRampToValueAtTime(420, at + 0.6);
+    gain.gain.setValueAtTime(0.0001, at);
+    gain.gain.exponentialRampToValueAtTime(0.5, at + 0.18);
+    gain.gain.exponentialRampToValueAtTime(0.16, at + 0.8);
+    gain.gain.setValueAtTime(0.16, at + Math.max(0.9, dur - 0.5));
+    gain.gain.exponentialRampToValueAtTime(0.0001, at + dur + 0.3);
+    src.connect(filter).connect(gain).connect(audio.destination);
+    src.start(at);
+    src.stop(at + dur + 0.4);
+    tone(70, at, 0.6, 0.3, 'sine', 40);
+    for (let i = 0; i < 18 * dur; i++) {
+      noiseBurst(at + 0.15 + Math.random() * dur, 0.008 + Math.random() * 0.02, 'highpass', 1500 + Math.random() * 3500, 0.05 + Math.random() * 0.25);
+    }
+  }
+
+  // A sad trombone: wah, wah, wah, waaah.
+  function trombone(at) {
+    [[311, 0.42], [294, 0.42], [277, 0.42], [262, 1.3]].forEach(([f, dur], i) => {
+      const t = at + i * 0.48;
+      const osc = audio.createOscillator();
+      const filter = audio.createBiquadFilter();
+      const gain = audio.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(f, t);
+      if (i === 3) { // the long last note wobbles
+        const lfo = audio.createOscillator();
+        const depth = audio.createGain();
+        lfo.frequency.value = 5.5;
+        depth.gain.value = 7;
+        lfo.connect(depth).connect(osc.frequency);
+        lfo.start(t);
+        lfo.stop(t + dur + 0.05);
+      }
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(500, t);
+      filter.frequency.linearRampToValueAtTime(1300, t + 0.12);
+      filter.frequency.linearRampToValueAtTime(700, t + dur);
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.13, t + 0.06);
+      gain.gain.setValueAtTime(0.13, t + dur - 0.12);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      osc.connect(filter).connect(gain).connect(audio.destination);
+      osc.start(t);
+      osc.stop(t + dur + 0.05);
+    });
+  }
+
+  function sfx(kind, secs) {
     try {
       unlockAudio();
       if (!audio) return;
@@ -2710,6 +2903,15 @@
         for (let i = 0; i < 6; i++) meow(now + 0.5 + i * 0.55 + Math.random() * 0.3);
       } else if (kind === 'pop') {
         for (let i = 0; i < 9; i++) tone(520 + Math.random() * 380, now + i * 0.1 + Math.random() * 0.04, 0.09, 0.13, 'sine', 240);
+      } else if (kind === 'fire') {
+        blaze(now, Math.min(6, Math.max(1, secs || 3))); // secs: how long it burns
+      } else if (kind === 'ash') {
+        noiseBurst(now, 0.8, 'lowpass', 260, 0.3);
+        noiseBurst(now + 0.05, 0.5, 'bandpass', 1800, 0.08);
+      } else if (kind === 'reborn') {
+        [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, now + i * 0.07, 0.45, 0.07, 'triangle'));
+      } else if (kind === 'sad') {
+        trombone(now);
       }
     } catch (e) { /* no sound available */ }
   }
@@ -2799,7 +3001,7 @@
   function syncSummary() {
     const v = ui.view;
     const over = v.phase === 'handOver' || v.phase === 'gameOver';
-    const key = v.history.length ? `${v.gameNo}:${v.history.length}` : null;
+    const key = v.forfeit ? `${v.gameNo}:forfeit` : v.history.length ? `${v.gameNo}:${v.history.length}` : null;
     if (over && key !== ui.summaryKey) {
       ui.summaryKey = key;
       openSummary(false);
@@ -2832,16 +3034,23 @@
     if (bar) bar.replaceChildren(...summaryActions());
   }
 
+  // The results of the hand just played, or of the whole game if someone forfeited it.
+  function openSummary(manual) {
+    if (ui.view.forfeit) openForfeit(manual);
+    else openHandResults(manual);
+  }
+
   // Hand results. The first time they appear they play out like a scoreboard: leftover cards flip over
   // one by one, the numbers count up, the hand's winner lights up, and at the end of a game there's a
   // drumroll, the winner, and confetti. Reopening them later just shows the result.
-  function openSummary(manual) {
+  function openHandResults(manual) {
     const v = ui.view;
     const x = v.history[v.history.length - 1];
     if (!x) return;
     const me = v.seat;
     const o = 1 - me;
-    const gameOver = v.phase === 'gameOver';
+    const ended = v.phase === 'gameOver';
+    const gameOver = ended && !v.forfeit; // this hand won the game (a forfeited game has its own results)
     const key = `${v.gameNo}:${v.history.length}`;
     const animate = !manual && !calm() && !ui.revealed.has(key);
     ui.revealed.add(key);
@@ -2872,7 +3081,7 @@
         return f;
       }))));
     const pending = animate ? ' pending' : '';
-    const winnerNote = !gameOver && x.won != null ? h('p', { class: 'armed-note' + pending }, x.won === me
+    const winnerNote = !ended && x.won != null ? h('p', { class: 'armed-note' + pending }, x.won === me
       ? '⚔️ You won the hand, so you get one of each attack to use in the next one.'
       : `⚔️ ${v.names[x.won]} won the hand and gets one of each attack to use in the next one. Watch out!`) : null;
     const banner = gameOver ? h('div', { class: 'winner-banner' + pending }, winnerTitle) : null;
@@ -2925,6 +3134,61 @@
       t += 700;
     }
     later(t, finishReveal);
+  }
+
+  // A forfeited game. The first time: up goes the white flag (to a sad trombone), then the winner's
+  // banner, the fanfare and confetti. Reopening it just shows the result.
+  function openForfeit(manual) {
+    const v = ui.view;
+    const f = v.forfeit;
+    const me = v.seat;
+    const o = 1 - me;
+    const key = `${v.gameNo}:forfeit`;
+    const animate = !manual && !calm() && !ui.revealed.has(key);
+    ui.revealed.add(key);
+    clearReveal();
+    const winnerTitle = v.winner === me ? 'You win the game! 🏆' : `${v.names[v.winner]} wins the game! 🏆`;
+    const pending = animate ? ' pending' : '';
+    const banner = h('div', { class: 'winner-banner' + pending }, winnerTitle);
+    const record = recordLine(v);
+    if (animate) record.classList.add('pending');
+    const handsWon = (p) => v.history.filter((x) => x.won === p).length;
+    const rows = [me, o].map((p) => h('tr', { 'data-seat': p },
+      h('th', null, p === me ? 'You' : nm(v.names[p])),
+      h('td', null, String(handsWon(p))),
+      h('td', null, String(v.totals[p]))));
+    const crown = () => rows.forEach((r) => r.classList.toggle('hand-winner', Number(r.dataset.seat) === v.winner));
+    const body = [
+      h('div', { class: 'forfeit-flag', 'aria-hidden': 'true' }, '🏳️'),
+      h('p', { class: 'lede' }, f.by === me ? `You gave up the game, so ${v.names[o]} wins it.` : `${v.names[f.by]} gave up the game, so you win it!`,
+        f.midHand ? ` Hand ${v.handNo} wasn’t finished, so it isn’t scored.` : ''),
+      v.history.length ? h('table', { class: 'summary' },
+        h('thead', null, h('tr', null, h('th', null, ''), h('th', null, 'Hands won'), h('th', null, 'Score'))),
+        h('tbody', null, rows)) : null,
+      banner,
+      record,
+    ];
+    const title = animate ? `🏳️ ${f.by === me ? 'You' : v.names[f.by]} forfeited` : winnerTitle;
+    const actions = animate ? [h('button', { class: 'btn ghost', onclick: skipReveal }, 'Skip ▸▸')] : summaryActions();
+    openModal({ title, body, actions, kind: 'summary', manual, wide: true });
+    if (!animate) {
+      crown();
+      return;
+    }
+    ui.revealing = true;
+    sfx('sad');
+    const box = $('#modal-root .modal');
+    if (box) box.animate([{ transform: 'scale(0.85)', opacity: 0 }, { transform: 'scale(1.03)', opacity: 1, offset: 0.7 }, { transform: 'scale(1)', opacity: 1 }], { duration: 450, easing: 'ease-out' });
+    later(2700, () => {
+      const titleEl = $('#modal-title');
+      if (titleEl) titleEl.textContent = winnerTitle;
+      crown();
+      banner.classList.remove('pending');
+      record.classList.remove('pending');
+      sfx('fanfare');
+      confetti();
+    });
+    later(3400, finishReveal);
   }
 
   const later = (ms, fn) => ui.revealTimers.push(setTimeout(fn, ms));
@@ -3000,6 +3264,7 @@
         li('Empty draw pile:', 'the discards, apart from the top card, are shuffled into a new draw pile. If there’s nothing to shuffle, the hand ends.'),
         li('Scoring:', `you score the cards you put on the table, minus the cards left in your hand (Aces and Jokers in hand count 15). ${SCORING_INFO[st.scoring]}`),
         li('Winning:', `the first to ${st.target} wins. If you both pass it in the same hand, the higher total wins; a tie means one more hand.`),
+        li('Forfeiting:', 'either of you can give up the game with 🏳️ Forfeit at the top. The other player wins it, and the next game starts as soon as they’re ready.'),
         li('Attacks (just for fun):', 'you start each game with one wild attack and earn another for every meld or lay-off. Whoever scores more in a hand also gets one of each for the next hand. They never change the cards or the score.')),
       actions: [h('button', { class: 'btn primary', onclick: closeModal }, 'Got it')],
     });
