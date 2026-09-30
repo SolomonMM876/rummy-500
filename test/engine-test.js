@@ -218,7 +218,8 @@ goOut(g); // Sol +18, Alex −17
 eq(g.history[0].won, 0, 'higher hand score wins the hand');
 act(g, 0, { type: 'ready' });
 act(g, 1, { type: 'ready' });
-eq([g.attacks[0], g.attacks[1], g.wild], [{ smash: 1, spiders: 1, bloom: 1, tornado: 1, catstorm: 1, gray: 1 }, {}, [1, 1]], 'the winner gets one of each attack; everyone has a wild one');
+eq([g.attacks[0], g.attacks[1], g.wild], [{ smash: 1, spiders: 1, bloom: 1, tornado: 1, catstorm: 1, gray: 1 }, {}, [2, 1]], 'the winner gets one of each attack; everyone has a wild one, plus one for the meld');
+g.wild = [1, 1]; // keep the counting below simple
 ok(!act(g, 1, { type: 'attack', kind: 'spiders' }) && g.wild[1] === 0, 'the loser can still spend their wild attack');
 eq(act(g, 1, { type: 'attack', kind: 'spiders' }), 'You don’t have that attack. Win a hand to earn attacks for the next one.', 'but only once');
 ok(!act(g, 0, { type: 'attack', kind: 'spiders' }), 'use an attack, even on the other player’s turn or before drawing');
@@ -245,6 +246,17 @@ ok(g.log.some((e) => e.text.includes('went out')), 'the finished hand’s moves 
 act(g, 0, { type: 'ready' });
 act(g, 1, { type: 'ready' });
 ok(g.log.length <= 2 && g.log[0].text.startsWith('Hand 2:'), 'a new deal clears the previous hand’s moves');
+
+// Every meld or lay-off earns a wild attack; Undo takes it back.
+g = game();
+setup(g, { hands: [['5H', '6H', '7H', '8H', '9C', 'KD'], ['3C', '9S', '5D']], discard: ['2S'], stock: ['QC'] });
+act(g, 0, { type: 'draw-stock' });
+ok(!act(g, 0, { type: 'meld', cards: ['5H', '6H', '7H'] }) && g.wild[0] === 2, 'a meld earns a wild attack');
+ok(!act(g, 0, { type: 'layoff', meld: 'm1', cards: ['8H'] }) && g.wild[0] === 3, 'so does a lay-off');
+ok(!act(g, 0, { type: 'undo' }) && g.wild[0] === 2, 'undoing the lay-off takes its attack back');
+ok(!act(g, 0, { type: 'attack', kind: 'spiders' }) && g.wild[0] === 1, 'spend one');
+ok(!act(g, 0, { type: 'undo' }) && g.wild[0] === 0, 'undoing the meld still takes back the attack it earned');
+eq(R.viewFor(g, 1).wild, [0, 1], 'both players can see the counts');
 
 // Trading one card each.
 g = game();

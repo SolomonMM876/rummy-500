@@ -447,6 +447,13 @@ body.nudge .game { animation: nudge 0.5s ease; }
 .carried-fan { position: fixed; left: 0; top: 0; display: flex; translate: -50% -50%; pointer-events: none; filter: drop-shadow(0 10px 14px rgba(0, 0, 0, 0.4)); }
 .carried-fan .card + .card { margin-left: -24px; }
 
+/* ---------- games won ---------- */
+.record { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 2px 0 10px; padding: 8px 10px; border-radius: 10px; background: rgba(243, 194, 79, 0.1); border: 1px solid rgba(243, 194, 79, 0.3); }
+.record-label { font-size: 12px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--gold); }
+.record-score { font-variant-numeric: tabular-nums; }
+.record .nm { max-width: 8em; }
+.modal-body .record, .panel-card .record { margin: 12px 0; }
+
 /* ---------- trades ---------- */
 .trade-offer { display: flex; margin: 8px 0 4px; }
 .trade-offer .card { --cw: 66px; --ch: 94px; }

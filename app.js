@@ -79,6 +79,7 @@
     ['bye', '👋', 'Say goodbye to those points!'],
     ['yawn', '🥱', 'Is that all you’ve got?'],
     ['gg', '🤝', 'Good game!'],
+    ['icecream', '🍦', 'Here, have an ice cream. You’ve earned it.'],
   ];
   const TAUNT_BY_ID = Object.fromEntries(TAUNTS.map((t) => [t[0], t]));
   // Attacks you earn by winning a hand (the rules live in engine.js).
@@ -305,6 +306,10 @@
         const g = clone(t.game); // apply to a copy so a rejected move changes nothing
         const err = E.apply(g, seat, action, rng);
         if (err) return err;
+        if (g.phase === 'gameOver' && t.game.phase !== 'gameOver' && g.winner != null) {
+          t.record = t.record || [0, 0]; // games won at this table, by seat
+          t.record[g.winner] += 1;
+        }
         t.game = g;
       }
       saveTable(t);
@@ -319,11 +324,11 @@
       const grabs = t.players.map((p) => p.grab || 'none');
       if (t.lobby || !t.game) {
         return {
-          phase: 'lobby', seat, code: t.code, settings: t.settings, names: t.players.map((p) => p.name), online, backs, grabs,
+          phase: 'lobby', seat, code: t.code, settings: t.settings, names: t.players.map((p) => p.name), online, backs, grabs, record: t.record || [0, 0],
           lastGame: t.game ? { names: t.game.names, totals: t.game.totals } : null,
         };
       }
-      return { ...E.viewFor(t.game, seat), code: t.code, online, backs, grabs };
+      return { ...E.viewFor(t.game, seat), code: t.code, online, backs, grabs, record: t.record || [0, 0] };
     }
 
     broadcast() {
@@ -760,6 +765,7 @@
           h('div', { class: 'muted small' }, 'Your friend sees your cards with this design.')),
         h('button', { class: 'btn small', onclick: chooseStyle }, 'Change')),
       v.lastGame ? h('p', { class: 'fine' }, `Last game: ${v.lastGame.names[0]} ${v.lastGame.totals[0]}, ${v.lastGame.names[1]} ${v.lastGame.totals[1]}.`) : null,
+      v.record && v.record[0] + v.record[1] > 0 ? recordLine(v) : null,
       settingsForm(v, host),
       h('div', { class: 'lobby-start' }, host
         ? h('button', { class: 'btn primary big', disabled: !ready, onclick: () => send({ type: 'start' }) }, ready ? 'Deal the first hand' : 'Waiting for your friend to join…')
@@ -863,16 +869,20 @@
     }
     if (!ui.wildHinted && v.phase === 'play' && v.wild && v.wild[v.seat] > 0) {
       ui.wildHinted = true;
-      setTimeout(() => toast('⭐ You each start the game with a wild attack. Use it whenever you like with ⚔️ Attacks, next to Taunt.'), 1200);
+      setTimeout(() => toast('⭐ You each start with a wild attack and earn another for every meld or lay-off. Use them with ⚔️ Attacks, next to Taunt.'), 1200);
     }
     renderVideo();
     syncAttack();
+    const wildNow = v.wild ? v.wild[v.seat] : 0;
+    if (prev && prev.wild && sameHand(prev, v) && wildNow > prev.wild[v.seat]) toast('⚔️ +1 wild attack for that play!');
     const drew = prev && prev.phase === 'play' && v.phase === 'play' && prev.handNo === v.handNo && prev.gameNo === v.gameNo &&
       prev.turn === v.turn && prev.step === 'draw' && v.step === 'play';
     if (drew) pickupCue(pilesBefore);
     const sameTurn = prev && prev.phase === 'play' && v.phase === 'play' && prev.handNo === v.handNo && prev.gameNo === v.gameNo && prev.turn === v.turn;
     if (sameTurn) playCue(prev, handBefore);
   }
+
+  const sameHand = (a, b) => a.phase === 'play' && b.phase === 'play' && a.gameNo === b.gameNo && a.handNo === b.handNo;
 
   // Keep your own card order between updates: new cards go on the right and glow.
   function syncHand(prev) {
@@ -1126,6 +1136,7 @@
     $('#side-panels').replaceChildren(
       h('section', { class: 'panel' },
         h('h3', null, 'Scores', h('span', { class: 'muted' }, ` · first to ${v.settings.target}`)),
+        recordLine(v),
         h('table', { class: 'scores' },
           h('thead', null, h('tr', null, h('th', null, 'Hand'), h('th', null, 'You'), h('th', null, nm(v.names[o])))),
           h('tbody', null, v.history.length
@@ -1136,6 +1147,15 @@
       h('section', { class: 'panel log' },
         h('h3', null, 'Moves'),
         h('ol', null, v.log.slice().reverse().map((e) => h('li', null, e.text)))));
+  }
+
+  // Games won at this table so far, e.g. "Games won: You 2 – 1 Alex".
+  function recordLine(v) {
+    const r = v.record || [0, 0];
+    const me = v.seat;
+    return h('div', { class: 'record' },
+      h('span', { class: 'record-label' }, 'Games won'),
+      h('span', { class: 'record-score' }, h('strong', null, 'You ', r[me]), ' – ', h('strong', null, r[1 - me], ' '), nm(v.names[1 - me])));
   }
 
   // Overlap a row of cards just enough to fit its width.
@@ -1405,7 +1425,7 @@
     const mine = (ui.view.attacks && ui.view.attacks[ui.view.seat]) || {};
     const wild = (ui.view.wild && ui.view.wild[ui.view.seat]) || 0;
     return [
-      wild ? h('div', { class: 'menu-note' }, '⭐ You have a wild attack: spend it on any of these.') : null,
+      wild ? h('div', { class: 'menu-note' }, `⭐ You have ${plural(wild, 'wild attack')}: spend ${wild === 1 ? 'it' : 'them'} on any of these. You earn one for every meld or lay-off.`) : null,
       ...E.ATTACKS.map((k) => h('button', { type: 'button', class: 'taunt', role: 'menuitem', disabled: !(mine[k] || wild), onclick: () => doAttack(k) },
         h('span', { class: 'taunt-emoji', 'aria-hidden': 'true' }, ATTACK_INFO[k].emoji),
         h('span', null, h('strong', null, ATTACK_INFO[k].label),
@@ -2565,6 +2585,7 @@
     const body = [
       h('p', { class: 'lede' }, gameOver ? `Final score ${Math.max(...v.totals)} to ${Math.min(...v.totals)}. ${out}` : out,
         tied ? ' You’re tied, so there’s one more hand.' : ''),
+      gameOver ? recordLine(v) : null,
       !gameOver && x.won != null ? h('p', { class: 'armed-note' }, x.won === me
         ? '⚔️ You won the hand, so you get one of each attack to use in the next one.'
         : `⚔️ ${v.names[x.won]} won the hand and gets one of each attack to use in the next one. Watch out!`) : null,
@@ -2603,7 +2624,8 @@
         li('Going out:', 'you go out by discarding your last card, which ends the hand. You can’t meld or lay off your last card, so always keep one to discard.'),
         li('Empty draw pile:', 'the discards, apart from the top card, are shuffled into a new draw pile. If there’s nothing to shuffle, the hand ends.'),
         li('Scoring:', `you score the cards you put on the table, minus the cards left in your hand (Aces and Jokers in hand count 15). ${SCORING_INFO[st.scoring]}`),
-        li('Winning:', `the first to ${st.target} wins. If you both pass it in the same hand, the higher total wins; a tie means one more hand.`)),
+        li('Winning:', `the first to ${st.target} wins. If you both pass it in the same hand, the higher total wins; a tie means one more hand.`),
+        li('Attacks (just for fun):', 'you start each game with one wild attack and earn another for every meld or lay-off. Whoever scores more in a hand also gets one of each for the next hand. They never change the cards or the score.')),
       actions: [h('button', { class: 'btn primary', onclick: closeModal }, 'Got it')],
     });
   }

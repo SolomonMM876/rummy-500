@@ -398,6 +398,12 @@
     }));
   }
 
+  // Every meld or lay-off earns a wild attack (usable as any kind).
+  function earnAttack(g, seat) {
+    if (!g.wild) g.wild = [1, 1]; // games saved before wild attacks existed
+    g.wild[seat] += 1;
+  }
+
   const mustPlayMsg = (id) => `First meld or lay off the ${label(id)}: you took it from deeper in the discard pile, so it has to be played this turn.`;
 
   // You can only go out by discarding, so a meld or lay-off must leave a card you're allowed to discard.
@@ -461,7 +467,8 @@
       const rest = g.hands[seat].filter((id) => !act.cards.includes(id));
       const keep = keepCheck(g, rest);
       if (keep) return keep;
-      g.ti.undo.push(snapshot(g, seat));
+      g.ti.undo.push({ ...snapshot(g, seat), earned: true });
+      earnAttack(g, seat);
       const m = { id: 'm' + ++g.meldSeq, type: opt.type, cards: opt.cards.map((c) => ({ ...c, by: seat })) };
       if (opt.type === 'set') m.rank = opt.rank;
       else { m.suit = opt.suit; m.start = opt.start; }
@@ -483,7 +490,8 @@
       const rest = g.hands[seat].filter((id) => !act.cards.includes(id));
       const keep = keepCheck(g, rest);
       if (keep) return keep;
-      g.ti.undo.push(snapshot(g, seat));
+      g.ti.undo.push({ ...snapshot(g, seat), earned: true });
+      earnAttack(g, seat);
       g.melds[idx] = { ...opt, cards: opt.cards.map((c) => (c.by == null ? { ...c, by: seat } : c)) };
       g.hands[seat] = rest;
       const added = g.melds[idx].cards.filter((c) => act.cards.includes(c.id));
@@ -520,6 +528,7 @@
       g.meldSeq = s.meldSeq;
       g.step = s.step;
       Object.assign(g.ti, s.ti);
+      if (s.earned && g.wild) g.wild[seat] = Math.max(0, g.wild[seat] - 1); // the attack that play earned goes too
       note(g, s.step === 'draw' ? `${g.names[seat]} put the cards back on the discard pile.` : `${g.names[seat]} took back a play.`);
     },
 
