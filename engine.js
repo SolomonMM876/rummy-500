@@ -25,7 +25,7 @@
   const RANK_PLURAL = [null, 'Aces', '2s', '3s', '4s', '5s', '6s', '7s', '8s', '9s', '10s', 'Jacks', 'Queens', 'Kings'];
   const SCORING = ['simplified', 'traditional', 'advanced'];
   // Cosmetic attacks: whoever scores more in a hand gets one of each for the next hand.
-  const ATTACKS = ['smash', 'spiders', 'bloom', 'tornado', 'catstorm', 'gray'];
+  const ATTACKS = ['smash', 'spiders', 'bloom', 'tornado', 'catstorm', 'gray', 'peek'];
   const ATTACK_NOTE = {
     smash: (name) => `${name} smashed the table in half! 💥`,
     spiders: (name) => `${name} released the spiders! 🕷️`,
@@ -33,6 +33,7 @@
     tornado: (name) => `${name} sent a tornado through the table! 🌪️`,
     catstorm: (name) => `${name} made it rain cats! 🐈`,
     gray: (name) => `${name} drained the colour from the other hand! 🌫️`,
+    peek: (name) => `${name} spotted one of the other player’s cards in a mirror! 🔍`,
   };
 
   const isJoker = (id) => id.charAt(0) === 'X';
@@ -296,6 +297,7 @@
       wild: [1, 1], // one attack each to start the game, usable as any kind
       lastAttack: null, // { n, by, kind }: n counts up so each attack plays once
       trade: null, // an open offer: { from: seat, card }
+      peek: null, // the last mirror peek: { n, by, card } (the card came from the other player's hand)
       log: [],
       logSeq: 0,
       seq: 0,
@@ -325,6 +327,7 @@
     g.ready = [false, false];
     note(g, `Hand ${g.handNo}: ${g.settings.handSize} cards each. ${g.names[g.starter]} goes first.`);
     g.attacks = [{}, {}];
+    g.peek = null;
     const last = g.history[g.history.length - 1];
     if (last && last.won != null) {
       g.attacks[last.won] = Object.fromEntries(ATTACKS.map((k) => [k, 1]));
@@ -533,7 +536,7 @@
     },
 
     // Usable any time during the hand, on either player's turn. Purely visual.
-    attack(g, seat, act) {
+    attack(g, seat, act, rng) {
       if (g.phase !== 'play') return 'Attacks can only be used during a hand.';
       if (!ATTACKS.includes(act.kind)) return 'Unknown attack.';
       if (!g.wild) g.wild = [1, 1]; // games saved before wild attacks existed
@@ -542,6 +545,11 @@
       else if (g.wild[seat] > 0) g.wild[seat] -= 1;
       else return 'You don’t have that attack. Win a hand to earn attacks for the next one.';
       g.lastAttack = { n: ((g.lastAttack && g.lastAttack.n) || 0) + 1, by: seat, kind: act.kind };
+      if (act.kind === 'peek') {
+        // One random card from the other hand. Both players learn which: the owner already knows it.
+        const theirs = g.hands[1 - seat];
+        g.peek = { n: g.lastAttack.n, by: seat, card: theirs[Math.floor(rng() * theirs.length)] };
+      }
       note(g, ATTACK_NOTE[act.kind](g.names[seat]));
     },
 
@@ -637,6 +645,7 @@
       wild: g.wild || [1, 1],
       lastAttack: g.lastAttack || null,
       trade: g.trade || null,
+      peek: g.peek || null,
       log: g.log.slice(-80),
       seq: g.seq,
     };

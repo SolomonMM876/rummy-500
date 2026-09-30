@@ -447,6 +447,25 @@ body.nudge .game { animation: nudge 0.5s ease; }
 .carried-fan { position: fixed; left: 0; top: 0; display: flex; translate: -50% -50%; pointer-events: none; filter: drop-shadow(0 10px 14px rgba(0, 0, 0, 0.4)); }
 .carried-fan .card + .card { margin-left: -24px; }
 
+/* ---------- mirror peek ---------- */
+.mirror {
+  position: fixed; width: 150px; height: 196px; padding: 9px; border-radius: 50% / 42%;
+  background: linear-gradient(145deg, #e9c46a, #a8742a 45%, #f1d58a 60%, #8c5a1c);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.5), inset 0 0 0 2px rgba(255, 255, 255, 0.35);
+}
+.mirror-glass {
+  position: relative; display: grid; place-items: center; width: 100%; height: 100%; overflow: hidden; border-radius: 50% / 42%;
+  background: linear-gradient(160deg, #dfe8ef, #9fb3c2 40%, #eef3f7 60%, #a9bac7); box-shadow: inset 0 0 18px rgba(20, 40, 60, 0.45);
+}
+.mirror .card.reflected { --cw: 64px; --ch: 90px; transform: scaleX(-1); opacity: 0.88; filter: saturate(0.9); }
+.mirror-shine { position: absolute; inset: -30%; background: linear-gradient(115deg, transparent 40%, rgba(255, 255, 255, 0.75) 50%, transparent 60%); animation: shine 1.6s ease-in-out 0.3s 2 both; }
+@keyframes shine { from { transform: translateX(-60%); } to { transform: translateX(60%); } }
+.peek-pop { position: fixed; left: 0; top: 0; display: grid; justify-items: center; gap: 10px; }
+.peek-pop .card { --cw: 78px; --ch: 110px; box-shadow: 0 0 0 3px #b6d8ff, 0 0 30px rgba(160, 210, 255, 0.8), 0 14px 30px rgba(0, 0, 0, 0.5); }
+.peek-label { white-space: nowrap; font: 800 15px/1 var(--sans); color: #0d2233; background: #cfe6ff; padding: 7px 12px; border-radius: 999px; box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35); }
+.hand .card.spotted { box-shadow: 0 0 0 3px #b6d8ff, 0 0 26px rgba(160, 210, 255, 0.95); }
+.seen { font-size: 12px; font-weight: 700; color: #b6d8ff; }
+
 /* ---------- the Maxibon taunt ---------- */
 .taunt-emoji.art, .bubble-emoji.art { display: inline-grid; place-items: center; width: 36px; flex: none; }
 .taunt-emoji.art svg, .bubble-emoji.art svg { display: block; width: 36px; height: 18px; }

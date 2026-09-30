@@ -218,7 +218,7 @@ goOut(g); // Sol +18, Alex −17
 eq(g.history[0].won, 0, 'higher hand score wins the hand');
 act(g, 0, { type: 'ready' });
 act(g, 1, { type: 'ready' });
-eq([g.attacks[0], g.attacks[1], g.wild], [{ smash: 1, spiders: 1, bloom: 1, tornado: 1, catstorm: 1, gray: 1 }, {}, [2, 1]], 'the winner gets one of each attack; everyone has a wild one, plus one for the meld');
+eq([g.attacks[0], g.attacks[1], g.wild], [{ smash: 1, spiders: 1, bloom: 1, tornado: 1, catstorm: 1, gray: 1, peek: 1 }, {}, [2, 1]], 'the winner gets one of each attack; everyone has a wild one, plus one for the meld');
 g.wild = [1, 1]; // keep the counting below simple
 ok(!act(g, 1, { type: 'attack', kind: 'spiders' }) && g.wild[1] === 0, 'the loser can still spend their wild attack');
 eq(act(g, 1, { type: 'attack', kind: 'spiders' }), 'You don’t have that attack. Win a hand to earn attacks for the next one.', 'but only once');
@@ -246,6 +246,19 @@ ok(g.log.some((e) => e.text.includes('went out')), 'the finished hand’s moves 
 act(g, 0, { type: 'ready' });
 act(g, 1, { type: 'ready' });
 ok(g.log.length <= 2 && g.log[0].text.startsWith('Hand 2:'), 'a new deal clears the previous hand’s moves');
+
+// Mirror peek: see one random card from the other player's hand.
+g = game();
+setup(g, { hands: [['5H', '6H', '9C'], ['3C', '9S', '5D']], discard: ['2S'], stock: ['7H'] });
+ok(!act(g, 0, { type: 'attack', kind: 'peek' }), 'peek with the starting wild attack');
+ok(['3C', '9S', '5D'].includes(g.peek.card) && g.peek.by === 0 && g.peek.n === g.lastAttack.n, 'the peeked card is from the other hand');
+eq(R.viewFor(g, 0).peek, g.peek, 'the peeker sees which card');
+act(g, 0, { type: 'draw-stock' });
+act(g, 0, { type: 'meld', cards: ['5H', '6H', '7H'] });
+act(g, 0, { type: 'discard', card: '9C' });
+act(g, 0, { type: 'ready' });
+act(g, 1, { type: 'ready' });
+eq(g.peek, null, 'a new hand forgets the peek');
 
 // Every meld or lay-off earns a wild attack; Undo takes it back.
 g = game();

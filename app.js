@@ -11,6 +11,11 @@
   'use strict';
 
   const E = window.R500;
+  // This page's release, read from the ?v= on its own <script> tag. Bump it in index.html with every release:
+  // the new URLs make browsers fetch fresh files, and the two players' pages compare versions.
+  const APP_VERSION = (() => {
+    try { return new URL(document.currentScript.src).searchParams.get('v') || 'dev'; } catch (e) { return 'dev'; }
+  })();
   const PEER_PREFIX = 'sm-rummy500-';
   const HEARTBEAT_MS = 4000;
   const STALE_MS = 13000;
@@ -93,6 +98,7 @@
     tornado: { emoji: '🌪️', label: 'Tornado', blurb: 'whip their cards around and scramble their hand', sent: (n) => `A tornado is tearing through ${n}’s table!` },
     catstorm: { emoji: '🐈', label: 'Cat storm', blurb: 'make it rain cats on their screen', sent: (n) => `It’s raining cats on ${n}!` },
     gray: { emoji: '🌫️', label: 'Drain the colour', blurb: 'turn their hand grey for 30 seconds', sent: (n) => `${n}’s hand has gone grey for 30 seconds!` },
+    peek: { emoji: '🔍', label: 'Mirror peek', blurb: 'see one of their cards in a mirror', sent: (n) => `You spotted one of ${n}’s cards!` },
   };
 
   // ---------- helpers ----------
@@ -262,6 +268,7 @@
       seat.token = token;
       if (this.t.lobby || !seat.name) seat.name = cleanName(msg.name) || 'Friend';
       if (BACK_IDS.has(msg.back)) seat.back = msg.back;
+      this.guestVersion = String(msg.version || ''); // '' = a page from before versions existed
       if (isGrab(msg.grab)) seat.grab = msg.grab;
       this.conn = conn;
       this.lastSeen = Date.now();
@@ -327,11 +334,11 @@
       const grabs = t.players.map((p) => p.grab || 'none');
       if (t.lobby || !t.game) {
         return {
-          phase: 'lobby', seat, code: t.code, settings: t.settings, names: t.players.map((p) => p.name), online, backs, grabs, record: t.record || [0, 0],
+          phase: 'lobby', seat, code: t.code, settings: t.settings, names: t.players.map((p) => p.name), online, backs, grabs, record: t.record || [0, 0], version: APP_VERSION,
           lastGame: t.game ? { names: t.game.names, totals: t.game.totals } : null,
         };
       }
-      return { ...E.viewFor(t.game, seat), code: t.code, online, backs, grabs, record: t.record || [0, 0] };
+      return { ...E.viewFor(t.game, seat), code: t.code, online, backs, grabs, record: t.record || [0, 0], version: APP_VERSION };
     }
 
     broadcast() {
@@ -429,7 +436,7 @@
       conn.on('open', () => {
         clearTimeout(this.openTimer);
         this.lastHeard = Date.now();
-        conn.send({ type: 'hello', token: this.token, name: this.name, back: myBack(), grab: myGrab() });
+        conn.send({ type: 'hello', token: this.token, name: this.name, back: myBack(), grab: myGrab(), version: APP_VERSION });
       });
       conn.on('data', (msg) => { if (this.conn === conn) this.onData(msg); });
       const lost = () => {
@@ -629,9 +636,24 @@
   function renderBanner() {
     const el = $('#banner');
     if (!el) return;
-    const text = statusText();
-    el.textContent = text;
-    el.hidden = !text;
+    const status = statusText();
+    const ver = status ? null : versionCheck();
+    el.replaceChildren(...[
+      status || (ver && ver.text),
+      ver && ver.mine && h('button', { class: 'btn small', onclick: () => location.reload() }, 'Reload now'),
+    ].filter(Boolean));
+    el.hidden = !(status || ver);
+  }
+
+  // The host's page runs the rules, so both pages should be the same release. Versions sort as text.
+  function versionCheck() {
+    const v = ui.view;
+    if (!v || !ui.net) return null;
+    const other = ui.role === 'host' ? ui.net.guestVersion : v.version || '';
+    if (other == null || other === APP_VERSION) return null; // (host: friend not connected yet)
+    const name = v.names[1 - v.seat] || 'Your friend';
+    if (other < APP_VERSION) return { mine: false, text: `${name}’s page is an older version of the game. Ask them to reload it; the game carries on.` };
+    return { mine: true, text: 'A newer version of the game is out. Reload this page to get it; the game carries on.' };
   }
 
   // Your opponent's connection, as far as this browser can tell.
@@ -968,7 +990,8 @@
             h('span', { class: 'dot ' + (online ? 'on' : 'off'), title: online ? 'Connected' : 'Not connected' }),
             online ? null : h('span', { class: 'muted small' }, ' offline'),
             charges(v, o) ? h('span', { class: 'armed', title: `${v.names[o]} won the last hand and has attacks to use this hand` }, '⚔️') : null),
-          h('div', { class: 'who-sub' }, `${plural(n, 'card')} · ${onTable} on the table this hand · ${v.totals[o]} total`)),
+          h('div', { class: 'who-sub' }, `${plural(n, 'card')} · ${onTable} on the table this hand · ${v.totals[o]} total`),
+          seenCards(v).length ? h('div', { class: 'seen', title: 'Cards you spotted with Mirror peek this hand' }, '👀 Seen: ', seenCards(v).map(E.label).join(' ')) : null),
         theirTurn ? h('span', { class: 'badge' }, v.step === 'draw' ? 'Drawing…' : 'Playing…') : null),
       backs,
       h('div', { class: 'social' },
@@ -1697,6 +1720,14 @@
     if (ui.attackSeen === undefined || n < ui.attackSeen) { ui.attackSeen = n; return; }
     if (n === ui.attackSeen) return;
     ui.attackSeen = n;
+    if (la.kind === 'peek') {
+      const p = ui.view.peek;
+      if (p && p.n === la.n) {
+        if (la.by === ui.view.seat) peekTheirs(p.card);
+        else peekMine(p.card, ui.view.names[la.by]);
+      }
+      return;
+    }
     if (la.by === ui.view.seat) launchAttack(la.kind);
     else if (la.kind === 'smash') smashTable(ui.view.names[la.by]);
     else if (la.kind === 'spiders') releaseSpiders(ui.view.names[la.by]);
@@ -2100,6 +2131,90 @@
     setTimeout(reveal, T * 0.72);
   }
 
+  // ---------- mirror peek ----------
+
+  const seenKey = (v) => `${v.gameNo}:${v.handNo}`;
+
+  // Cards you've spotted this hand that could still be in their hand (not since played, discarded or traded to you).
+  function seenCards(v) {
+    const saved = store.get('r500:seen:' + ui.code);
+    if (!saved || saved.key !== seenKey(v)) return [];
+    const gone = new Set([...v.discard, ...v.hand, ...v.melds.flatMap((m) => m.cards.map((c) => c.id))]);
+    return saved.cards.filter((id) => !gone.has(id));
+  }
+
+  function rememberSeen(card) {
+    const v = ui.view;
+    const saved = store.get('r500:seen:' + ui.code);
+    const cards = saved && saved.key === seenKey(v) ? saved.cards : [];
+    if (!cards.includes(card)) cards.push(card);
+    store.set('r500:seen:' + ui.code, { key: seenKey(v), cards });
+  }
+
+  function mirrorEl(card) {
+    return h('div', { class: 'mirror', 'aria-hidden': 'true' },
+      h('div', { class: 'mirror-glass' }, cardEl(card, { cls: 'reflected' }), h('span', { class: 'mirror-shine' })));
+  }
+
+  const mirrorFrames = [
+    { transform: 'translate(-50%, -30%) scale(0.6)', opacity: 0 },
+    { transform: 'translate(-50%, -50%) scale(1)', opacity: 1, offset: 0.15 },
+    { transform: 'translate(-50%, -50%) scale(1)', opacity: 1, offset: 0.8 },
+    { transform: 'translate(-50%, -40%) scale(0.9)', opacity: 0 },
+  ];
+
+  // A gilt mirror rises behind their hand and reflects one card (back to front, as mirrors do);
+  // then the card flips out to you the right way round. A note by their name keeps it for the hand.
+  function peekTheirs(card) {
+    const name = oppName();
+    sfx('shimmer');
+    rememberSeen(card);
+    renderOpp();
+    toast(`🔍 In the mirror: ${name} is holding the ${E.label(card)}.`, 'poke');
+    const strip = $('#opp .opp-hand');
+    const boardEl = $('.board');
+    if (calm() || !strip || !boardEl) return;
+    const r = strip.getBoundingClientRect();
+    const cx = r.left + Math.min(r.width, 320) / 2;
+    const cy = r.top + r.height / 2 + 70;
+    const mirror = mirrorEl(card);
+    Object.assign(mirror.style, { left: `${cx}px`, top: `${cy}px` });
+    fx().append(mirror);
+    mirror.animate(mirrorFrames, { duration: 4200, easing: 'ease-out' }).onfinish = () => mirror.remove();
+    const b = boardEl.getBoundingClientRect();
+    const tx = b.left + b.width / 2;
+    const ty = b.top + b.height * 0.48;
+    const pop = h('div', { class: 'peek-pop', 'aria-hidden': 'true' }, cardEl(card), h('div', { class: 'peek-label' }, `👀 ${name} has the ${E.label(card)}`));
+    fx().append(pop);
+    const at = (x, y, s, turn) => `translate(${x}px, ${y}px) translate(-50%, -50%) scale(${s}) rotateY(${turn}deg)`;
+    pop.animate([
+      { transform: at(cx, cy, 0.5, 180), opacity: 0 },
+      { transform: at(cx, cy, 0.6, 180), opacity: 0, offset: 0.25 },
+      { transform: at(tx, ty, 1.35, 0), opacity: 1, offset: 0.45 },
+      { transform: at(tx, ty, 1.35, 0), opacity: 1, offset: 0.88 },
+      { transform: at(tx, ty, 1.2, 0), opacity: 0 },
+    ], { duration: 5200, easing: 'ease-in-out' }).onfinish = () => pop.remove();
+  }
+
+  // What the other player sees: the same mirror behind their own hand, and the spotted card glows.
+  function peekMine(card, name) {
+    sfx('shimmer');
+    toast(`🔍 ${name} spotted your ${E.label(card)} in a mirror!`, 'poke');
+    const el = $(`#hand .card[data-id="${card}"]`);
+    if (el) {
+      el.classList.add('spotted');
+      setTimeout(() => { const now = $(`#hand .card[data-id="${card}"]`); if (now) now.classList.remove('spotted'); }, 4000);
+    }
+    const handEl = $('#hand');
+    if (calm() || !handEl) return;
+    const hr = handEl.getBoundingClientRect();
+    const target = el ? el.getBoundingClientRect() : hr;
+    const mirror = mirrorEl(card);
+    Object.assign(mirror.style, { left: `${target.left + target.width / 2}px`, top: `${hr.top - 90}px` });
+    fx().append(mirror);
+    mirror.animate(mirrorFrames, { duration: 4200, easing: 'ease-out' }).onfinish = () => mirror.remove();
+  }
+
   // ---------- rearranging your hand ----------
   // Press on a card and drag: it lifts off and the other cards slide aside to show where it will land.
 
@@ -2500,6 +2615,7 @@
       const now = audio.currentTime;
       if (kind === 'poke') { tone(880, now, 0.35, 0.3); tone(1320, now + 0.16, 0.35, 0.3); }
       else if (kind === 'turn') { tone(784, now, 0.3, 0.12); tone(1047, now + 0.13, 0.45, 0.12); }
+      else if (kind === 'shimmer') { [1318, 1568, 2093, 2637].forEach((f, i) => tone(f, now + i * 0.07, 0.35, 0.07, 'triangle')); }
       else if (kind === 'trade') { tone(523, now, 0.25, 0.12); tone(659, now + 0.1, 0.25, 0.12); tone(784, now + 0.2, 0.4, 0.12); }
       else if (kind === 'taunt') tone(520, now, 0.22, 0.16, 'triangle', 980);
       else if (kind === 'whoosh') whoosh(now);
